@@ -61,8 +61,8 @@ class PatternAnalyzer:
         for i in range(max(0, idx-lookback), idx):
             if mode == "profit":
                 # 최근 10일 저점 대비 수익률
-                recent_low = self.data.iloc[max(0, i-10):i+1]['Low'].min()
-                current_price = self.data.iloc[i]['Close']
+                recent_low = self.data.iloc[max(0, i-10):i+1]['low'].min()
+                current_price = self.data.iloc[i]['close']
                 change_pct = (current_price - recent_low) / recent_low
 
                 # 5% 이상 수익
@@ -70,19 +70,19 @@ class PatternAnalyzer:
                     scenarios += 1
 
                     # RSI 과매도 구간 (팔 가능성 ↑)
-                    rsi = self.data.iloc[i]['RSI']
+                    rsi = self.data.iloc[i]['rsi']
                     if rsi < RSI_OVERSOLD:
                         reaction_signals += 1
 
                     # 볼린저 상단 근처면 (익절 가능성 ↑)
-                    bb_position = self.data.iloc[i]['BB_Position']
+                    bb_position = self.data.iloc[i]['bb_position']
                     if bb_position > 0.9:
                         reaction_signals += 1
 
             elif mode == "loss":
                 # 최근 10일 고점 대비 손실률
-                recent_high = self.data.iloc[max(0, i-10):i+1]['High'].max()
-                current_price = self.data.iloc[i]['Close']
+                recent_high = self.data.iloc[max(0, i-10):i+1]['high'].max()
+                current_price = self.data.iloc[i]['close']
                 change_pct = (current_price - recent_high) / recent_high
 
                 # -3% 이상 손실
@@ -90,12 +90,12 @@ class PatternAnalyzer:
                     scenarios += 1
 
                     # RSI 과매도 구간 (겁먹고 손절 가능성 ↑)
-                    rsi = self.data.iloc[i]['RSI']
+                    rsi = self.data.iloc[i]['rsi']
                     if rsi < RSI_OVERSOLD:
                         reaction_signals += 1
 
                     # 볼린저 하단 근처면 (손절 가능성 ↑)
-                    bb_position = self.data.iloc[i]['BB_Position']
+                    bb_position = self.data.iloc[i]['bb_position']
                     if bb_position < 0.2:
                         reaction_signals += 1
 
@@ -109,12 +109,12 @@ class PatternAnalyzer:
 
     def _analyze_volatility_reaction(self, idx: int) -> float:
         """변동성 반응 패턴 (0-1: 0=패닉매매, 1=침착함)"""
-        current_return = abs(self.data.iloc[idx]['Daily_Return'])
+        current_return = abs(self.data.iloc[idx]['daily_return'])
         
         # 하루 5% 이상 변동 시
         if current_return > VOLATILITY_THRESHOLD:
-            rsi = self.data.iloc[idx]['RSI']
-            macd_hist = self.data.iloc[idx]['MACD_Hist']
+            rsi = self.data.iloc[idx]['rsi']
+            macd_hist = self.data.iloc[idx]['macd_hist']
             
             # 극단적 지표 상황에서의 반응 측정
             panic_signals = 0
@@ -122,11 +122,11 @@ class PatternAnalyzer:
             if rsi > 80 or rsi < 20:  # 극단적 RSI
                 panic_signals += 1
             
-            if abs(macd_hist) > self.data['MACD_Hist'].std() * 2:  # 극단적 MACD
+            if abs(macd_hist) > self.data['macd_hist'].std() * 2:  # 극단적 MACD
                 panic_signals += 1
                 
             # 거래량 급증도 패닉 신호
-            volume_ratio = self.data.iloc[idx]['Volume_Ratio']
+            volume_ratio = self.data.iloc[idx]['volume_ratio']
             if volume_ratio > HIGH_VOLUME_THRESHOLD:
                 panic_signals += 1
             
@@ -139,14 +139,14 @@ class PatternAnalyzer:
     def _analyze_time_based_trading(self, idx: int) -> float:
         """시간대별 매매 성향 (0-1: 0=충동적, 1=계획적)"""
         # 거래량 급증을 통한 충동적 매매 추정
-        volume_ratio = self.data.iloc[idx]['Volume_Ratio']
+        volume_ratio = self.data.iloc[idx]['volume_ratio']
         
         # 갭 상황을 충동 매매로 가정
-        gap = abs(self.data.iloc[idx]['Gap']) if idx > 0 else 0
+        gap = abs(self.data.iloc[idx]['gap']) if idx > 0 else 0
         
         # 주초/주말 효과 (월요일/금요일)
-        is_monday = self.data.iloc[idx]['Is_Monday']
-        is_friday = self.data.iloc[idx]['Is_Friday']
+        is_monday = self.data.iloc[idx]['is_monday']
+        is_friday = self.data.iloc[idx]['is_friday']
         
         impulse_score = 0
         if volume_ratio > HIGH_VOLUME_THRESHOLD:  # 거래량 2배 이상 급증
@@ -164,11 +164,11 @@ class PatternAnalyzer:
         indicators = []
         
         # 이동평균 신호
-        sma_signal = 1 if self.data.iloc[idx]['Close'] > self.data.iloc[idx]['SMA_20'] else -1
+        sma_signal = 1 if self.data.iloc[idx]['close'] > self.data.iloc[idx]['sma_20'] else -1
         indicators.append(sma_signal)
         
         # RSI 신호
-        rsi = self.data.iloc[idx]['RSI']
+        rsi = self.data.iloc[idx]['rsi']
         if rsi > RSI_OVERBOUGHT:
             rsi_signal = -1  # 매도 신호
         elif rsi < RSI_OVERSOLD:
@@ -178,11 +178,11 @@ class PatternAnalyzer:
         indicators.append(rsi_signal)
 
         # MACD 신호
-        macd_signal = 1 if self.data.iloc[idx]['MACD'] > self.data.iloc[idx]['MACD_Signal'] else -1
+        macd_signal = 1 if self.data.iloc[idx]['macd'] > self.data.iloc[idx]['macd_signal'] else -1
         indicators.append(macd_signal)
         
         # 볼린저 밴드 신호
-        bb_position = self.data.iloc[idx]['BB_Position']
+        bb_position = self.data.iloc[idx]['bb_position']
         if bb_position > 0.8:
             bb_signal = -1  # 상단 근처 매도
         elif bb_position < 0.2:
@@ -231,9 +231,9 @@ class PatternAnalyzer:
         # 추세 패턴 강도 (이동평균선 정배열/역배열)
         trend_strength = 0.0
         if 'SMA_5' in row and 'SMA_20' in row and 'SMA_60' in row:
-            if row['SMA_5'] > row['SMA_20'] > row['SMA_60']:  # 상승 추세
+            if row['sma_5'] > row['sma_20'] > row['sma_60']:  # 상승 추세
                 trend_strength = 1.0
-            elif row['SMA_5'] < row['SMA_20'] < row['SMA_60']:  # 하락 추세
+            elif row['sma_5'] < row['sma_20'] < row['sma_60']:  # 하락 추세
                 trend_strength = 1.0
         pattern_scores.append(trend_strength)
         
@@ -253,8 +253,8 @@ class PatternAnalyzer:
     
     def _analyze_volume_reaction(self, idx: int) -> float:
         """거래량 반응 민감도 (0-1: 0=거래량무시, 1=거래량추종)"""
-        volume_ratio = self.data.iloc[idx]['Volume_Ratio']
-        price_change = abs(self.data.iloc[idx]['Daily_Return'])
+        volume_ratio = self.data.iloc[idx]['volume_ratio']
+        price_change = abs(self.data.iloc[idx]['daily_return'])
         
         # 거래량과 가격 변동의 상관관계 확인
         if volume_ratio > VOLUME_SPIKE_THRESHOLD:  # 거래량 50% 이상 증가
@@ -269,8 +269,8 @@ class PatternAnalyzer:
         recent_price_changes = []
         
         for i in range(max(0, idx-lookback), idx):
-            recent_volume_ratios.append(self.data.iloc[i]['Volume_Ratio'])
-            recent_price_changes.append(abs(self.data.iloc[i]['Daily_Return']))
+            recent_volume_ratios.append(self.data.iloc[i]['volume_ratio'])
+            recent_price_changes.append(abs(self.data.iloc[i]['daily_return']))
         
         # 거래량과 가격 변동의 상관관계
         if len(recent_volume_ratios) > 3:

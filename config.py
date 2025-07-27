@@ -4,7 +4,7 @@ from typing import Dict
 
 # 기본 설정
 SYMBOL = "NVDA"
-PERIOD = "3mo"  # 3개월 테스트 데이터
+PERIOD = "1y"  # 1년 데이터
 INITIAL_CAPITAL = 100000  # 초기 자금 10만 달러
 
 # 매매 임계값
@@ -18,9 +18,9 @@ VOLATILITY_THRESHOLD = 0.05  # 5% 일일 변동성
 RSI_PERIOD = 14
 RSI_OVERBOUGHT = 70
 RSI_OVERSOLD = 30
-SMA_SHORT = 5
-SMA_MEDIUM = 20
-SMA_LONG = 60
+SMA_SHORT = 3
+SMA_MEDIUM = 5
+SMA_LONG = 10  # 60에서 10으로 변경하여 더 많은 거래 데이터 생성
 MACD_FAST = 12
 MACD_SLOW = 26
 MACD_SIGNAL = 9
@@ -137,6 +137,31 @@ INVESTOR_PROFILES = [
     )
 ]
 
+# 더 많은 프로필 자동 생성 (기존 5개 + 추가 45개 = 총 50개)
+import numpy as np
+
+# 각 매개변수의 변형을 만들어 추가 프로필 생성
+for i in range(45):
+    # 랜덤하게 값을 조정하여 다양한 프로필 생성
+    np.random.seed(i)  # 재현 가능한 랜덤값
+    
+    base_profile = np.random.choice(INVESTOR_PROFILES[:5])  # 기존 5개 프로필 중 하나를 기반으로
+    
+    # 각 속성을 ±0.2 범위에서 조정
+    new_profile = InvestorProfile(
+        name=f'{base_profile.name}_variant_{i}',
+        profit_taking=max(0, min(1, base_profile.profit_taking + np.random.uniform(-0.2, 0.2))),
+        stop_loss=max(0, min(1, base_profile.stop_loss + np.random.uniform(-0.2, 0.2))),
+        volatility_reaction=max(0, min(1, base_profile.volatility_reaction + np.random.uniform(-0.2, 0.2))),
+        technical_reliance=max(0, min(1, base_profile.technical_reliance + np.random.uniform(-0.2, 0.2))),
+        time_sensitivity=max(0, min(1, base_profile.time_sensitivity + np.random.uniform(-0.2, 0.2))),
+        pattern_sensitivity=max(0, min(1, base_profile.pattern_sensitivity + np.random.uniform(-0.2, 0.2))),
+        volume_sensitivity=max(0, min(1, base_profile.volume_sensitivity + np.random.uniform(-0.2, 0.2))),
+        candle_sensitivity=max(0, min(1, base_profile.candle_sensitivity + np.random.uniform(-0.2, 0.2)))
+    )
+    
+    INVESTOR_PROFILES.append(new_profile)
+
 # 패턴 분석용 설정
 PATTERN_NAMES = [
     'profit_taking_tendency',
@@ -160,6 +185,4 @@ PATTERN_KOREAN_NAMES = [
     '캔들 분석'
 ]
 
-# 파일 출력 설정
-OUTPUT_CSV = 'nvda_trading_patterns.csv'
-OUTPUT_CHART = 'nvda_pattern_analysis.png'
+# 파일 출력 설정 (위에서 이미 정의됨, 중복 제거)
