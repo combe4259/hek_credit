@@ -41,12 +41,32 @@ class PatternVisualizer:
         for period in ['1d', '7d', '30d']:
             col = f'return_{period}'
             if col in self.df.columns:
-                # 수익률을 5개 그룹으로 분할 (매우 하락, 하락, 보합, 상승, 매우 상승)
-                self.df[f'{col}_category'] = pd.qcut(
-                    self.df[col], 
-                    q=5, 
-                    labels=['매우 하락', '하락', '보합', '상승', '매우 상승']
-                )
+                # 데이터가 충분한지 확인
+                unique_values = self.df[col].nunique()
+                
+                if unique_values < 5 or len(self.df) < 5:
+                    # 데이터가 부족하면 간단한 범주화 사용
+                    self.df[f'{col}_category'] = pd.cut(
+                        self.df[col], 
+                        bins=[-float('inf'), -0.02, -0.01, 0.01, 0.02, float('inf')],
+                        labels=['매우 하락', '하락', '보합', '상승', '매우 상승']
+                    )
+                else:
+                    # 충분한 데이터가 있으면 분위수 사용
+                    try:
+                        self.df[f'{col}_category'] = pd.qcut(
+                            self.df[col], 
+                            q=5, 
+                            labels=['매우 하락', '하락', '보합', '상승', '매우 상승'],
+                            duplicates='drop'  # 중복 경계값 처리
+                        )
+                    except ValueError:
+                        # qcut이 실패하면 cut 사용
+                        self.df[f'{col}_category'] = pd.cut(
+                            self.df[col], 
+                            bins=[-float('inf'), -0.02, -0.01, 0.01, 0.02, float('inf')],
+                            labels=['매우 하락', '하락', '보합', '상승', '매우 상승']
+                        )
     
     def create_dataset_summary(self) -> pd.DataFrame:
         """데이터셋 요약 정보 생성 및 ML용 피처 엔지니어링"""
@@ -99,7 +119,9 @@ class PatternVisualizer:
             return
             
         # 디렉토리 생성
-        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        directory = os.path.dirname(filename)
+        if directory:  # 디렉토리 경로가 있는 경우에만 생성
+            os.makedirs(directory, exist_ok=True)
         
         if ml_format:
             # ML 분석용 컬럼만 선택

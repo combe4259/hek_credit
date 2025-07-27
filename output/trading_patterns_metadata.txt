@@ -1,0 +1,29 @@
+생성일: 2025-07-28 01:28:04
+기간: 10 ~ 248
+총 레코드 수: 11,950건
+
+[컬럼 설명]
+timestamp: 
+investor_profile: 
+action: 
+price: 
+technical_indicator_reliance: 기술적 지표 의존도 (0-1: 낮음-높음)
+chart_pattern_recognition: 차트 패턴 인식 민감도 (0-1: 무시-민감)
+volume_reaction: 거래량 반응 (0-1: 무시-추종)
+candle_analysis: 캔들 분석 (0-1: 무시-민감)
+profit_taking_tendency: 수익 실현 성향 (0-1: 단타-장기보유)
+stop_loss_tendency: 손절 성향 (0-1: 빠른손절-버티기)
+volatility_reaction: 변동성 반응 (0-1: 패닉-침착)
+time_based_trading: 시간대별 거래 (0-1: 충동적-계획적)
+rsi: 
+macd_signal: 
+bb_position: 
+volume_ratio: 
+daily_return: 
+gap: 
+return_1d: 
+return_7d: 
+return_30d: 
+return_1d_category: 
+return_7d_category: 
+return_30d_category: 

@@ -30,16 +30,16 @@ class ChartPatternIdentifier:
     def _identify_candle_patterns(self, df: pd.DataFrame):
         """캔들스틱 패턴 인식"""
         # 캔들 몸통 크기
-        df['Body_Size'] = abs(df['Close'] - df['Open'])
-        df['Body_Ratio'] = df['Body_Size'] / df['Close']
+        df['Body_Size'] = abs(df['close'] - df['open'])
+        df['Body_Ratio'] = df['Body_Size'] / df['close']
         
         # 장대양봉/음봉
         df['Is_Long_Green'] = (
-            (df['Close'] > df['Open']) & 
+            (df['close'] > df['open']) & 
             (df['Body_Ratio'] > LONG_CANDLE_THRESHOLD)
         )
         df['Is_Long_Red'] = (
-            (df['Close'] < df['Open']) & 
+            (df['close'] < df['open']) & 
             (df['Body_Ratio'] > LONG_CANDLE_THRESHOLD)
         )
         
@@ -47,26 +47,26 @@ class ChartPatternIdentifier:
         df['Is_Doji'] = df['Body_Ratio'] < DOJI_THRESHOLD
         
         # 해머/행맨
-        df['Upper_Shadow'] = df['High'] - np.maximum(df['Open'], df['Close'])
-        df['Lower_Shadow'] = np.minimum(df['Open'], df['Close']) - df['Low']
-        df['Shadow_Ratio'] = df['Lower_Shadow'] / (df['High'] - df['Low'])
+        df['Upper_Shadow'] = df['high'] - np.maximum(df['open'], df['close'])
+        df['Lower_Shadow'] = np.minimum(df['open'], df['close']) - df['low']
+        df['Shadow_Ratio'] = df['Lower_Shadow'] / (df['high'] - df['low'])
         
         df['Is_Hammer'] = (
             (df['Shadow_Ratio'] > 0.6) & 
             (df['Body_Ratio'] < 0.3) &
-            (df['Close'] > df['Open'])
+            (df['close'] > df['open'])
         )
         
         df['Is_Hanging_Man'] = (
             (df['Shadow_Ratio'] > 0.6) & 
             (df['Body_Ratio'] > 0.3) &
-            (df['Close'] < df['Open'])
+            (df['close'] < df['open'])
         )
     
     def _identify_gap_patterns(self, df: pd.DataFrame):
         """갭 패턴 인식"""
         # 갭 크기 계산
-        df['Gap'] = (df['Open'] - df['Close'].shift(1)) / df['Close'].shift(1)
+        df['Gap'] = (df['open'] - df['close'].shift(1)) / df['close'].shift(1)
         df['Gap'] = df['Gap'].fillna(0)
         
         # 갭업/갭다운
@@ -81,47 +81,47 @@ class ChartPatternIdentifier:
         window = 10
         
         # 국소 고점/저점 찾기
-        df['Local_High'] = df['High'].rolling(window=window, center=True).max() == df['High']
-        df['Local_Low'] = df['Low'].rolling(window=window, center=True).min() == df['Low']
+        df['Local_High'] = df['high'].rolling(window=window, center=True).max() == df['high']
+        df['Local_Low'] = df['low'].rolling(window=window, center=True).min() == df['low']
         
         # 이동평균선과의 거리 (지지/저항 역할)
-        df['Distance_SMA20'] = (df['Close'] - df['SMA_20']) / df['SMA_20']
-        df['Distance_SMA60'] = (df['Close'] - df['SMA_60']) / df['SMA_60']
+        df['Distance_SMA20'] = (df['close'] - df['sma_20']) / df['sma_20']
+        df['Distance_SMA60'] = (df['close'] - df['sma_60']) / df['sma_60']
         
         # 볼린저 밴드 터치
-        df['Touch_BB_Upper'] = abs(df['Close'] - df['BB_Upper']) / df['Close'] < 0.01
-        df['Touch_BB_Lower'] = abs(df['Close'] - df['BB_Lower']) / df['Close'] < 0.01
+        df['Touch_BB_Upper'] = abs(df['close'] - df['bb_upper']) / df['close'] < 0.01
+        df['Touch_BB_Lower'] = abs(df['close'] - df['bb_lower']) / df['close'] < 0.01
     
     def _identify_trend_patterns(self, df: pd.DataFrame):
         """추세 패턴 인식"""
         # 이동평균선 정렬
         df['MA_Bullish_Align'] = (
-            (df['Close'] > df['SMA_5']) & 
-            (df['SMA_5'] > df['SMA_20']) & 
-            (df['SMA_20'] > df['SMA_60'])
+            (df['close'] > df['sma_5']) & 
+            (df['sma_5'] > df['sma_20']) & 
+            (df['sma_20'] > df['sma_60'])
         )
         
         df['MA_Bearish_Align'] = (
-            (df['Close'] < df['SMA_5']) & 
-            (df['SMA_5'] < df['SMA_20']) & 
-            (df['SMA_20'] < df['SMA_60'])
+            (df['close'] < df['sma_5']) & 
+            (df['sma_5'] < df['sma_20']) & 
+            (df['sma_20'] < df['sma_60'])
         )
         
         # 추세 강도 (기울기)
         period = 5
-        df['SMA20_Slope'] = df['SMA_20'].rolling(window=period).apply(
+        df['SMA20_Slope'] = df['sma_20'].rolling(window=period).apply(
             lambda x: np.polyfit(range(len(x)), x, 1)[0] if len(x) == period else 0
         )
         
         # 골든크로스/데드크로스
         df['Golden_Cross'] = (
-            (df['SMA_5'] > df['SMA_20']) & 
-            (df['SMA_5'].shift(1) <= df['SMA_20'].shift(1))
+            (df['sma_5'] > df['sma_20']) & 
+            (df['sma_5'].shift(1) <= df['sma_20'].shift(1))
         )
         
         df['Dead_Cross'] = (
-            (df['SMA_5'] < df['SMA_20']) & 
-            (df['SMA_5'].shift(1) >= df['SMA_20'].shift(1))
+            (df['sma_5'] < df['sma_20']) & 
+            (df['sma_5'].shift(1) >= df['sma_20'].shift(1))
         )
     
     def get_pattern_strength(self, idx: int, pattern_type: str) -> float:

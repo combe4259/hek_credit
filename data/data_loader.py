@@ -67,8 +67,8 @@ class DataLoader:
                 df = df[['date'] + list(column_mapping.keys())]
                 
                 # 결측값 처리
-                df.fillna(method='ffill', inplace=True)
-                df.fillna(method='bfill', inplace=True)
+                df.ffill(inplace=True)
+                df.bfill(inplace=True)
                 
                 # 기본 정보 출력
                 date_min = df['date'].min().strftime('%Y-%m-%d') if hasattr(df['date'], 'min') else 'N/A'
@@ -197,8 +197,8 @@ class DataLoader:
         df.interpolate(method='linear', inplace=True)
         
         # 그래도 남아있는 결측값은 0 또는 이전 값으로 채우기
-        df.fillna(method='ffill', inplace=True)  # 이전 값으로 채우기
-        df.fillna(method='bfill', inplace=True)  # 이후 값으로 채우기
+        df.ffill(inplace=True)  # 이전 값으로 채우기
+        df.bfill(inplace=True)  # 이후 값으로 채우기
         df.fillna(0, inplace=True)  # 그래도 남아있으면 0으로 채우기
         
         self.data = df

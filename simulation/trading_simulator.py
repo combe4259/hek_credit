@@ -31,10 +31,10 @@ class TradingSimulator:
         position = None  # 현재 포지션 {'price': float, 'timestamp': datetime}
         
         # 충분한 데이터 확보 후 시작
-        start_idx = max(SMA_LONG, 20)
+        start_idx = max(SMA_LONG, 10)  # 더 빠른 시작
         
         for i in range(start_idx, len(self.data) - 1):
-            current_price = self.data.iloc[i]['Close']
+            current_price = self.data.iloc[i]['close']
             current_time = self.data.index[i]
             
             # 8가지 패턴 분석
@@ -45,8 +45,8 @@ class TradingSimulator:
             # 투자자 프로필에 따른 매매 결정
             decision = self._make_trading_decision(patterns, profile, current_price, position, i)
             
-            # 매매 결정이 있을 때만 기록
-            if decision['action'] != 'HOLD':
+            # 모든 결정을 기록 (HOLD 포함)
+            if True:  # 항상 기록
                 # 미래 수익률 계산
                 future_returns = self._calculate_future_returns(i)
                 
@@ -186,24 +186,24 @@ class TradingSimulator:
     def _get_required_signals(self, profile: InvestorProfile) -> int:
         """프로필별 필요한 매수 신호 개수"""
         if profile.name == 'Conservative':
-            return 3  # 신중한 매수
+            return 2  # 신중한 매수 (3에서 2로 완화)
         elif profile.name == 'Aggressive':
             return 1  # 공격적 매수
         elif profile.name == 'Technical_Trader':
-            return 2  # 기술적 근거 중시
+            return 1  # 기술적 근거 중시 (2에서 1로 완화)
         elif profile.name == 'Momentum_Trader':
-            return 2  # 모멘텀 중시
+            return 1  # 모멘텀 중시 (2에서 1로 완화)
         else:  # Swing_Trader
-            return 2  # 균형잡힌 접근
+            return 1  # 균형잡힌 접근 (2에서 1로 완화)
     
     def _calculate_future_returns(self, current_idx: int) -> Dict:
         """미래 수익률 계산"""
-        current_price = self.data.iloc[current_idx]['Close']
+        current_price = self.data.iloc[current_idx]['close']
         returns = {}
         
         for days, label in [(1, '1d'), (7, '7d'), (30, '30d')]:
             future_idx = min(current_idx + days, len(self.data) - 1)
-            future_price = self.data.iloc[future_idx]['Close']
+            future_price = self.data.iloc[future_idx]['close']
             returns[label] = (future_price - current_price) / current_price
         
         return returns
@@ -231,12 +231,12 @@ class TradingSimulator:
             'candle_analysis': patterns.get('candle_analysis', 0.5),
             
             # 시장 상황
-            'rsi': market_data.get('RSI', 50),
-            'macd_signal': 1 if market_data.get('MACD', 0) > market_data.get('MACD_Signal', 0) else 0,
-            'bb_position': market_data.get('BB_Position', 0.5),
-            'volume_ratio': market_data.get('Volume_Ratio', 1.0),
-            'daily_return': market_data.get('Daily_Return', 0),
-            'gap': market_data.get('Gap', 0),
+            'rsi': market_data.get('rsi', 50),
+            'macd_signal': 1 if market_data.get('macd', 0) > market_data.get('macd_signal', 0) else 0,
+            'bb_position': market_data.get('bb_position', 0.5),
+            'volume_ratio': market_data.get('volume_ratio', 1.0),
+            'daily_return': market_data.get('daily_return', 0),
+            'gap': market_data.get('gap', 0),
             
             # 결과 라벨
             'return_1d': future_returns['1d'],

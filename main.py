@@ -48,28 +48,20 @@ def main():
         
         # 2. 기술적 지표 계산
         print("\n[2/4] 기술적 지표 계산 중...")
-        df = data_loader.calculate_technical_indicators(df)
+        df = data_loader.calculate_technical_indicators()
         
-        # 3. 패턴 분석기 초기화
-        print("\n[3/4] 패턴 분석기 초기화 중...")
-        pattern_analyzer = PatternAnalyzer(df)
-        
-        # 4. 트레이딩 시뮬레이션 실행
-        print("\n[4/4] 트레이딩 시뮬레이션 실행 중...")
-        simulator = TradingSimulator(df, pattern_analyzer)
+        # 3. 트레이딩 시뮬레이션 실행 (패턴 분석기는 시뮬레이터 내부에서 생성됨)
+        print("\n[3/4] 트레이딩 시뮬레이션 실행 중...")
+        simulator = TradingSimulator(df)
         
         # 모든 프로필에 대해 시뮬레이션 실행
-        results = []
-        for profile in tqdm(INVESTOR_PROFILES, desc="투자자 프로필별 시뮬레이션"):
-            result = simulator.simulate_single_profile(profile)
-            if result:  # 결과가 있는 경우에만 추가
-                results.extend(result)
+        results = simulator.simulate_all_profiles()
         
         if not results:
             raise ValueError("시뮬레이션 결과가 없습니다!")
         
-        # 5. 결과 분석 및 시각화
-        print("\n[5/5] 결과 분석 및 저장 중...")
+        # 4. 결과 분석 및 시각화
+        print("\n[4/4] 결과 분석 및 저장 중...")
         visualizer = PatternVisualizer(results)
         
         # 데이터셋 요약 정보 출력
