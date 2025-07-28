@@ -91,7 +91,6 @@ async function isDuplicate(collection, title, url) {
     });
     return !!existing;
 }
-
 // 네이버 뉴스 통합뷰 URL로 변환
 function convertToNaverNewsView(url) {
     // 이미 네이버 뉴스 통합뷰 URL인 경우
@@ -115,6 +114,7 @@ function convertToNaverNewsView(url) {
 }
 
 // 뉴스 디테일 본문 크롤링 (네이버 뉴스 통합뷰 우선)
+
 async function getDetailContent(browser, url) {
     let detailPage;
     try {
@@ -123,12 +123,14 @@ async function getDetailContent(browser, url) {
         
         await new Promise(resolve => setTimeout(resolve, Math.random() * 2000 + 1000));
         
+
         // 네이버 뉴스 통합뷰 URL로 변환 시도
         const naverViewUrl = convertToNaverNewsView(url);
         console.log(`원본 URL: ${url}`);
         console.log(`통합뷰 URL: ${naverViewUrl}`);
         
         await detailPage.goto(naverViewUrl, {
+
             waitUntil: 'networkidle2',
             timeout: 60000
         });
@@ -168,21 +170,25 @@ async function getDetailContent(browser, url) {
                 const content = await detailPage.$eval(selector, el => el.innerText.trim());
                 if (content && content.length > 50) {
                     console.log(`✅ 네이버 통합뷰에서 본문 추출 성공 (${selector})`);
+
                     const cleanContent = content.replace(/\s+/g, ' ')
                                                 .replace(/\[.*?\]/g, '')
                                                 .replace(/\(.*?\)/g, '')
                                                 .replace(/\<.*?\>/g, '')
+
                                                 .replace(/본문 내용.*?보기/g, '')
                                                 .replace(/▶.*?$/gm, '')
                                                 .replace(/기자\s*=/g, '')
                                                 .replace(/사진.*?기자=/g, '')
                                                 .replace(/Copyright.*?Reserved\./gi, '')
                                                 .replace(/무단.*?금지/g, '')
+
                                                 .trim();
                     return cleanContent;
                 }
             }
         }
+
         
         // 네이버 통합뷰에서 못 찾은 경우 언론사 사이트 셀렉터로 시도
         console.log('⚠️ 네이버 통합뷰에서 본문을 찾지 못함. 언론사 사이트 시도...');

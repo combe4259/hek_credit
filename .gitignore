@@ -17,6 +17,7 @@ build/
 Thumbs.db
 
 env/
+
 venv/
 
 /crawling/node_modules
