@@ -114,7 +114,7 @@ function convertToNaverNewsView(url) {
     return url;
 }
 
-// 뉴스 디테일 본문 크롤링 (네이버 뉴스 통합뷰 우선)
+// 뉴스 디테일 정보 크롤링 (제목, 언론사, 날짜, 본문 모두 포함)
 async function getDetailContent(browser, url) {
     let detailPage;
     try {
@@ -161,13 +161,57 @@ async function getDetailContent(browser, url) {
             'article', 'main', '.main', '[class*="content"]', '[class*="article"]'
         ];
 
-        // 먼저 네이버 뉴스 통합뷰 셀렉터로 시도
+        // 먼저 네이버 뉴스 통합뷰에서 제목, 언론사, 날짜, 본문 모두 추출
         for (const selector of naverNewsSelectors) {
             const hasContent = await detailPage.$(selector);
             if (hasContent) {
                 const content = await detailPage.$eval(selector, el => el.innerText.trim());
                 if (content && content.length > 50) {
                     console.log(`✅ 네이버 통합뷰에서 본문 추출 성공 (${selector})`);
+                    
+                    // 제목 추출
+                    let title = '';
+                    try {
+                        title = await detailPage.$eval('.media_end_head_headline', el => el.textContent.trim());
+                    } catch (e) {
+                        // 제목을 찾을 수 없는 경우 다른 셀렉터 시도
+                        try {
+                            title = await detailPage.$eval('h1, .title, .headline', el => el.textContent.trim());
+                        } catch (e2) {
+                            title = '제목 없음';
+                        }
+                    }
+                    
+                    // 언론사 추출
+                    let press = '';
+                    try {
+                        const pressImg = await detailPage.$('.media_end_head_top_logo_img');
+                        if (pressImg) {
+                            press = await detailPage.$eval('.media_end_head_top_logo_img', el => el.alt || '');
+                        }
+                        if (!press) {
+                            press = await detailPage.$eval('.media_end_head_top_logo, .press_name, .source', el => el.textContent.trim());
+                        }
+                    } catch (e) {
+                        press = '언론사 없음';
+                    }
+                    
+                    // 날짜 추출
+                    let dateText = '';
+                    try {
+                        dateText = await detailPage.$eval('._ARTICLE_DATE_TIME', el => el.textContent.trim());
+                    } catch (e) {
+                        try {
+                            dateText = await detailPage.$eval('._ARTICLE_MODIFY_DATE_TIME', el => el.textContent.trim());
+                        } catch (e2) {
+                            try {
+                                dateText = await detailPage.$eval('.media_end_head_info_datestamp_time', el => el.textContent.trim());
+                            } catch (e3) {
+                                dateText = '';
+                            }
+                        }
+                    }
+                    
                     const cleanContent = content.replace(/\s+/g, ' ')
                                                 .replace(/\[.*?\]/g, '')
                                                 .replace(/\(.*?\)/g, '')
@@ -179,7 +223,13 @@ async function getDetailContent(browser, url) {
                                                 .replace(/Copyright.*?Reserved\./gi, '')
                                                 .replace(/무단.*?금지/g, '')
                                                 .trim();
-                    return cleanContent;
+                    
+                    return {
+                        title: title || '제목 없음',
+                        press: press || '언론사 없음',
+                        dateText: dateText || '',
+                        content: cleanContent
+                    };
                 }
             }
         }
@@ -218,7 +268,12 @@ async function getDetailContent(browser, url) {
                             .replace(/저작권자.*?무단.*?금지/g, '')
                             .replace(/\s*(더보기|관련기사|이전기사|다음기사)\s*/g, '')
                             .trim();
-                        return cleanContent;
+                        return {
+                            title: '제목 추출 실패',
+                            press: '언론사 추출 실패', 
+                            dateText: '',
+                            content: cleanContent
+                        };
                     }
                 }
             } catch (selectorError) {
@@ -226,10 +281,20 @@ async function getDetailContent(browser, url) {
                 continue;
             }
         }
-        return "본문을 가져올 수 없습니다.";
+        return {
+            title: '제목 추출 실패',
+            press: '언론사 추출 실패',
+            dateText: '',
+            content: '본문을 가져올 수 없습니다.'
+        };
     } catch (error) {
         console.log(`상세 내용 크롤링 실패: ${url} - ${error.message}`);
-        return "본문을 가져올 수 없습니다.";
+        return {
+            title: '제목 추출 실패',
+            press: '언론사 추출 실패',
+            dateText: '',
+            content: '본문을 가져올 수 없습니다.'
+        };
     } finally {
         if (detailPage) {
             await detailPage.close();
@@ -272,11 +337,21 @@ async function crawlAndSave(stockName = "엔비디아 NVIDIA", stockSymbol = "NV
             const batchArticles = [];
 
             const start = (pageNum - 1) * 10 + 1;
-            const searchUrl = `https://search.naver.com/search.naver?where=news&query=${encodeURIComponent(stockName)}&sort=1&photo=0&field=0&pd=0&ds=&de=&cluster_rank=74&mynews=0&office_type=0&office_section_code=0&news_office_checked=&nso=so:dd,p:all,a:all&start=${start}`;
+            const searchUrl = `https://search.naver.com/search.naver?ssc=tab.news.all&where=news&sm=tab_jum&query=%EC%97%94%EB%B9%84%EB%94%94%EC%95%84&start=${start}`;
 
             await new Promise(resolve => setTimeout(resolve, Math.random() * 5000 + 3000));
 
             const responseFromFetch = await fetchWithRetry(page, searchUrl);
+
+            // 동적 콘텐츠 로딩을 위한 추가 대기
+            console.log("동적 콘텐츠 로딩 대기 중...");
+            await new Promise(resolve => setTimeout(resolve, 5000));
+            
+            // 스크롤하여 콘텐츠 로딩 유도
+            await page.evaluate(() => {
+                window.scrollTo(0, document.body.scrollHeight / 2);
+            });
+            await new Promise(resolve => setTimeout(resolve, 2000));
 
             // 첫 페이지 디버그 저장
             if (pageNum === 1) {
@@ -291,18 +366,18 @@ async function crawlAndSave(stockName = "엔비디아 NVIDIA", stockSymbol = "NV
 
             let newsElements = [];
             
-            // Updated 2025 Naver news selectors - try multiple approaches
+            // 2025 Naver SDS 컴포넌트 기반 뉴스 셀렉터 - 모든 뉴스 링크 찾기
             const selectorGroups = [
-                // Modern Naver selectors
-                ['ul.list_news li', 'ul.list_news._infinite_list li'],
-                // SDS component selectors  
-                ['div.sds-comps-vertical-layout', 'div[data-sds-comp="ArticleItem"]'],
-                // General news selectors
-                ['.news_area', '.news_wrap', '.sa_item'],
-                // Legacy selectors
-                ['li.bx', 'li.sa_item_lazy_loading_wrap'],
-                // Broad fallback
-                ['[class*="news"]', '[class*="article"]']
+                // 모든 뉴스 링크를 찾기 (네이버 통합뷰 + 직접 언론사 링크)
+                ['a[href*="news.naver.com"]', 'a[href*="n.news.naver.com"]', 'a[href*="newsis.com"]', 'a[href*="joongang.co.kr"]', 'a[href*="chosun.com"]', 'a[href*="hankyung.com"]', 'a[href*="fnnews.com"]', 'a[href*="mk.co.kr"]', 'a[href*="yonhapnews.co.kr"]', 'a[href*="sedaily.com"]'],
+                // SDS 컴포넌트 내의 뉴스 링크
+                ['.news_tit a', '.news_info a', '.info_group a'],
+                // 뉴스 제목이 들어있는 SDS 텍스트 컴포넌트의 부모 요소
+                ['.sds-comps-text.sds-comps-text-type-body2', '.sds-comps-text-type-body1'],
+                // 더 구체적인 뉴스 아이템 컨테이너
+                ['div[data-template-id*="news"]', 'div[data-template-type="vertical"]'],
+                // 기존 방식도 유지 (백업용)
+                ['ul.list_news li', '.list_news li', '.news_area']
             ];
 
             for (const selectors of selectorGroups) {
@@ -348,16 +423,19 @@ async function crawlAndSave(stockName = "엔비디아 NVIDIA", stockSymbol = "NV
                     let dateText = '';
                     let press = '';
 
-                    // Title and Link - Updated selectors based on 2025 Naver structure
-                    // Try multiple approaches for title extraction
+                    // Title and Link - 2025 SDS 컴포넌트 구조에 맞게 업데이트
                     const titleSelectors = [
+                        // SDS 컴포넌트 내의 뉴스 링크 (n.news.naver.com 통합뷰)
+                        'a[href*="n.news.naver.com"]',
+                        'a[href*="news.naver.com/mnews/article"]',
+                        // SDS 텍스트 컴포넌트들
+                        '.sds-comps-text.sds-comps-text-type-body2',
+                        '.sds-comps-text.sds-comps-text-type-body1', 
+                        '.sds-comps-text-weight-sm',
+                        // 기존 방식들 (백업용)
                         'a[nocr="1"] span',
                         'a.sa_text_title',
-                        'a.news_tit', 
-                        'a[href*="news.naver.com"]',
-                        'a[href*="/article/"]',
-                        '.news_contents a',
-                        '.news_area a'
+                        'a[href*="/article/"]'
                     ];
 
                     for (const selector of titleSelectors) {
@@ -365,11 +443,23 @@ async function crawlAndSave(stockName = "엔비디아 NVIDIA", stockSymbol = "NV
                         if (titleElement) {
                             title = titleElement.textContent?.trim() || titleElement.innerText?.trim() || '';
                             if (title) {
+                                // 직접 링크가 있는 경우
                                 link = titleElement.getAttribute('href') || '';
-                                if (!link && titleElement.closest('a')) {
-                                    link = titleElement.closest('a').getAttribute('href') || '';
+                                
+                                // 링크가 없으면 부모나 자식에서 n.news.naver.com 링크 찾기
+                                if (!link) {
+                                    const parentLink = titleElement.closest('a[href*="n.news.naver.com"], a[href*="news.naver.com/mnews/article"]');
+                                    if (parentLink) {
+                                        link = parentLink.getAttribute('href') || '';
+                                    } else {
+                                        const childLink = titleElement.querySelector('a[href*="n.news.naver.com"], a[href*="news.naver.com/mnews/article"]');
+                                        if (childLink) {
+                                            link = childLink.getAttribute('href') || '';
+                                        }
+                                    }
                                 }
-                                break;
+                                
+                                if (title && link) break;
                             }
                         }
                     }
@@ -546,12 +636,24 @@ async function crawlAndSave(stockName = "엔비디아 NVIDIA", stockSymbol = "NV
                 }
 
                 let fullContent = articleData.summary || "내용 없음";
+                let actualTitle = articleData.title;
+                let actualPress = articleData.press;
+                let actualDate = articleData.dateText;
                 if (articleData.link && articleData.link.includes('news.naver.com')) {
                     console.log(`  상세 내용 크롤링 중...`);
                     try {
-                        const detailContent = await getDetailContent(browser, articleData.link);
-                        if (detailContent !== "본문을 가져올 수 없습니다.") {
-                            fullContent = detailContent;
+                        const detailInfo = await getDetailContent(browser, articleData.link);
+                        if (detailInfo.content !== "본문을 가져올 수 없습니다.") {
+                            fullContent = detailInfo.content;
+                            actualTitle = detailInfo.title || articleData.title;
+                            actualPress = detailInfo.press || articleData.press;
+                            actualDate = detailInfo.dateText || articleData.dateText;
+                            
+                            // 업데이트된 정보로 디버그 출력
+                            console.log(`  ✅ 실제 추출된 정보:`);
+                            console.log(`     제목: ${actualTitle}`);
+                            console.log(`     언론사: ${actualPress}`);
+                            console.log(`     날짜: ${actualDate}`);
                         } else {
                             console.log(`  경고: 상세 내용 가져오기 실패, 요약 사용.`);
                         }
@@ -565,12 +667,12 @@ async function crawlAndSave(stockName = "엔비디아 NVIDIA", stockSymbol = "NV
 
                 const article = {
                     stock: stockSymbol,
-                    title: articleData.title,
+                    title: actualTitle,
                     content: fullContent,
                     summary: articleData.summary,
                     url: articleData.link,
-                    press: articleData.press,
-                    published_at: parseKoreanDate(articleData.dateText),
+                    press: actualPress,
+                    published_at: parseKoreanDate(actualDate),
                     created_at: new Date()
                 };
 
