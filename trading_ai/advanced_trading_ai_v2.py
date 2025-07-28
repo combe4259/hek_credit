@@ -68,7 +68,7 @@ class AdvancedTradingAI:
             }
         ]
 
-    def load_trading_data(self, csv_path="../generate_data/output/trading_patterns.csv"):
+    def load_trading_data(self, csv_path="../generate_data/output/trading_patterns_augmented.csv"):
         """generate_data에서 생성한 CSV 데이터 로드"""
         print("📊 매매 패턴 데이터 로드 중...")
         
@@ -191,14 +191,14 @@ class AdvancedTradingAI:
         
         processed_df['sell_reason'] = df.get('reasoning', 'holding')
         
-        # 수익률 구간
-        processed_df['profit_zone'] = processed_df['final_profit_rate'].apply(self._get_profit_zone)
+        # 수익률 구간 - 미래 정보 제거
+        # processed_df['profit_zone'] = processed_df['final_profit_rate'].apply(self._get_profit_zone)
         
-        # 손실 패턴
-        processed_df['is_loss_pattern'] = (
-            (processed_df['max_profit_rate'] > 0.05) &
-            (processed_df['final_profit_rate'] < -0.05)
-        ).astype(int)
+        # 손실 패턴 - 미래 정보 제거
+        # processed_df['is_loss_pattern'] = (
+        #     (processed_df['max_profit_rate'] > 0.05) &
+        #     (processed_df['final_profit_rate'] < -0.05)
+        # ).astype(int)
         
         print(f"✅ 데이터 변환 완료: {len(processed_df)}개 레코드")
         
@@ -247,15 +247,15 @@ class AdvancedTradingAI:
         df['is_closing_hour'] = (df['buy_hour'] >= 14).astype(int)
         df['is_morning_hour'] = (df['buy_hour'] <= 10).astype(int)
         
-        # 2. 수익률 특징
-        df['profit_to_max_ratio'] = df['final_profit_rate'] / (df['max_profit_rate'] + 0.001)
-        df['drawdown'] = df['max_profit_rate'] - df['final_profit_rate']
-        df['profit_per_day'] = df['final_profit_rate'] / (df['holding_days'] + 1)
-        df['is_profitable'] = (df['final_profit_rate'] > 0).astype(int)
+        # 2. 수익률 특징 - 미래 정보 제거
+        # df['profit_to_max_ratio'] = df['final_profit_rate'] / (df['max_profit_rate'] + 0.001)
+        # df['drawdown'] = df['max_profit_rate'] - df['final_profit_rate']
+        # df['profit_per_day'] = df['final_profit_rate'] / (df['holding_days'] + 1)
+        # df['is_profitable'] = (df['final_profit_rate'] > 0).astype(int)
         
-        # 3. 변동성 특징
-        df['volatility_ratio'] = df['profit_volatility'] / (abs(df['final_profit_rate']) + 0.001)
-        df['extreme_move'] = (abs(df['final_profit_rate']) > 0.1).astype(int)
+        # 3. 변동성 특징 - 미래 정보 제거
+        # df['volatility_ratio'] = df['profit_volatility'] / (abs(df['final_profit_rate']) + 0.001)
+        # df['extreme_move'] = (abs(df['final_profit_rate']) > 0.1).astype(int)
         
         # 4. 종목 특징 인코딩
         df['sector_encoded'] = self.sector_encoder.fit_transform(df['sector'])
@@ -273,9 +273,9 @@ class AdvancedTradingAI:
         df['is_mid_term'] = ((df['holding_days'] >= 5) & (df['holding_days'] < 20)).astype(int)
         df['is_long_term'] = (df['holding_days'] >= 20).astype(int)
         
-        # 7. 추가 특징 (금융공학적 관점)
-        df['sharpe_ratio'] = df['profit_per_day'] / (df['profit_volatility'] + 0.001)
-        df['risk_adjusted_return'] = df['final_profit_rate'] / (df['profit_volatility'] + 0.001)
+        # 7. 추가 특징 (금융공학적 관점) - 미래 정보 제거
+        # df['sharpe_ratio'] = df['profit_per_day'] / (df['profit_volatility'] + 0.001)
+        # df['risk_adjusted_return'] = df['final_profit_rate'] / (df['profit_volatility'] + 0.001)
         
         # 8. 🎯 기술적 지표 보존 확인 (중요!)
         technical_indicators = ['rsi', 'macd_signal', 'bb_position', 'volume_ratio', 'daily_return', 'gap']
@@ -287,7 +287,7 @@ class AdvancedTradingAI:
         
         return df
 
-    def train_models(self, test_size=0.2, csv_path="../generate_data/output/trading_patterns.csv"):
+    def train_models(self, test_size=0.2, csv_path="../generate_data/output/trading_patterns_augmented.csv"):
         """모든 모델 훈련 (개선된 버전)"""
         print("🤖 고급 매매 패턴 AI 모델 훈련 시작...")
         
@@ -296,15 +296,17 @@ class AdvancedTradingAI:
         df = self.create_features(df)
         
         # 특징 선택 - 순수 시장 데이터만 (투자자 성향 데이터 제거, 실제 지표 추가)
+        # 🚨 미래 수익률 정보 제거! (final_profit_rate, max_profit_rate, min_profit_rate)
+        # 🚨 buy_minute 제거! (너무 세밀한 정보로 과적합 유발)
         feature_cols = [
             # 기본 시장 정보
             'sector_encoded', 'market_cap_score', 'market_condition_encoded',
             
-            # 시간 정보
-            'buy_hour', 'buy_minute', 'is_closing_hour', 'is_morning_hour',
+            # 시간 정보 (분 단위 제외)
+            'buy_hour', 'is_closing_hour', 'is_morning_hour',
             
-            # 순수 수익률 정보 (과거 데이터)
-            'final_profit_rate', 'max_profit_rate', 'min_profit_rate', 'profit_volatility',
+            # 변동성 정보만 (미래 정보 아님)
+            'profit_volatility',
             
             # 🎯 실제 기술적 지표들 (핵심 추가!)
             'rsi',           # RSI 지표 (과매수/과매도)
@@ -723,25 +725,34 @@ class AdvancedTradingAI:
             'buy_hour': hour,
             'buy_minute': minute,
             'holding_days': holding_days,
-            'final_profit_rate': current_profit_rate,
-            'max_profit_rate': max(current_profit_rate, current_profit_rate * 1.1),
-            'min_profit_rate': min(0, current_profit_rate * 0.9),
+            # 미래 정보 제거 - 실시간 예측 시에는 미래를 모름
+            # 'final_profit_rate': current_profit_rate,
+            # 'max_profit_rate': max(current_profit_rate, current_profit_rate * 1.1),
+            # 'min_profit_rate': min(0, current_profit_rate * 0.9),
             'profit_volatility': market_data.get('daily_volatility', 0.02),
-            'market_condition': market_data['market_condition']
+            'market_condition': market_data['market_condition'],
+            
+            # 🎯 실시간 기술적 지표 추가 (핵심 수정!)
+            'rsi': market_data.get('rsi', 50),                    # RSI 지표 (기본값: 50)
+            'macd_signal': market_data.get('macd_signal', 0),     # MACD 신호 (기본값: 0)
+            'bb_position': market_data.get('bb_position', 0.5),   # 볼린저밴드 위치 (기본값: 0.5)
+            'volume_ratio': market_data.get('volume_ratio', 1.0), # 거래량 비율 (기본값: 1.0)
+            'daily_return': market_data.get('daily_return', 0),   # 일일 수익률 (기본값: 0)
+            'gap': market_data.get('gap', 0)                      # 갭 상승/하락 (기본값: 0)
         }
         
         # 데이터프레임 생성 및 특징 엔지니어링
         df = pd.DataFrame([features])
-        df['profit_zone'] = df['final_profit_rate'].apply(self._get_profit_zone)
+        # df['profit_zone'] = df['final_profit_rate'].apply(self._get_profit_zone)  # 미래 정보 제거
         df = self.create_features(df)
         
         # 원-핫 인코딩 추가
         time_slot_dummies = pd.get_dummies(df['time_slot'], prefix='time')
-        profit_zone_dummies = pd.get_dummies(df['profit_zone'], prefix='zone')
+        # profit_zone_dummies = pd.get_dummies(df['profit_zone'], prefix='zone')  # 미래 정보 제거
         
         # 필요한 컬럼만 선택
         numeric_cols = [col for col in self.feature_names if col in df.columns]
-        X = pd.concat([df[numeric_cols], time_slot_dummies, profit_zone_dummies], axis=1)
+        X = pd.concat([df[numeric_cols], time_slot_dummies], axis=1)
         
         # 모든 특징이 있는지 확인하고 없는 것은 0으로 채움
         for col in self.feature_names:
@@ -945,7 +956,7 @@ if __name__ == "__main__":
     
     # CSV 파일에서 데이터 로드하여 모델 훈련
     try:
-        ai.train_models(csv_path="../generate_data/output/trading_patterns.csv")
+        ai.train_models(csv_path="../generate_data/output/trading_patterns_augmented.csv")
         
         # 모델 저장
         ai.save_model('trained_trading_ai_v2.pkl')
@@ -965,7 +976,14 @@ if __name__ == "__main__":
                 'sector': '전자',
                 'market_cap': '대형주',
                 'daily_volatility': 0.021,
-                'market_condition': '상승장'
+                'market_condition': '상승장',
+                # 🎯 실제 기술적 지표 추가 (시나리오 1: 수익 중)
+                'rsi': 58,              # 중립 구간
+                'macd_signal': 1,       # 매수 신호
+                'bb_position': 0.65,    # 상단 근처
+                'volume_ratio': 1.2,    # 거래량 증가
+                'daily_return': 0.015,  # 1.5% 상승
+                'gap': 0.008            # 0.8% 갭업
             }
         )
         
@@ -992,7 +1010,14 @@ if __name__ == "__main__":
                 'sector': '전자',
                 'market_cap': '대형주',
                 'daily_volatility': 0.035,
-                'market_condition': '하락장'
+                'market_condition': '하락장',
+                # 🎯 실제 기술적 지표 추가 (시나리오 2: 손실 중)
+                'rsi': 35,              # 과매도 구간
+                'macd_signal': 0,       # 매도 신호
+                'bb_position': 0.25,    # 하단 근처
+                'volume_ratio': 1.8,    # 거래량 급증 (공포매도)
+                'daily_return': -0.025, # -2.5% 하락
+                'gap': -0.012           # -1.2% 갭다운  
             }
         )
         
