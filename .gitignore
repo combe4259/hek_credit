@@ -1,2 +1,24 @@
 /venv
 /.idea
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build output
+dist/
+build/
+
+# Env files
+.env
+.env.local
+
+# Mac / Windows
+.DS_Store
+Thumbs.db
+
+env/
+venv/
+
+/crawling/node_modules
