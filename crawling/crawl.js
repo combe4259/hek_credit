@@ -178,6 +178,11 @@ async function getDetailContent(browser, url) {
                                                 .replace(/사진.*?기자=/g, '')
                                                 .replace(/Copyright.*?Reserved\./gi, '')
                                                 .replace(/무단.*?금지/g, '')
+                                                .replace(/본문 내용 크게 보기/g, '')
+                                                .replace(/▶/g, '')
+                                                .replace(/기자\s*=/g, '')
+                                                .replace(/사진출처=(.*?)\s*기자=/g, '')
+                                                .replace(/Copyright ⓒ .*? All Rights Reserved\./g, '')
                                                 .trim();
                     return cleanContent;
                 }

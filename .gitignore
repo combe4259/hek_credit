@@ -23,4 +23,6 @@ Thumbs.db
 env/
 venv/
 
-/crawling/node_modules"*.pyc"
+/crawling/node_modules
+__pycache__/
+*.pyc
