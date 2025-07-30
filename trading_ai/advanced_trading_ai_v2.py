@@ -68,7 +68,7 @@ class AdvancedTradingAI:
             }
         ]
 
-    def load_trading_data(self, csv_path="../generate_data/output/trading_patterns_augmented.csv"):
+    def load_trading_data(self, csv_path="../generate_data/output/advanced_trading_data_augmented.csv"):
         """generate_data에서 생성한 CSV 데이터 로드"""
         print("📊 매매 패턴 데이터 로드 중...")
         
@@ -287,7 +287,7 @@ class AdvancedTradingAI:
         
         return df
 
-    def train_models(self, test_size=0.2, csv_path="../generate_data/output/trading_patterns_augmented.csv"):
+    def train_models(self, test_size=0.2, csv_path="../generate_data/output/advanced_trading_data_augmented.csv"):
         """모든 모델 훈련 (개선된 버전)"""
         print("🤖 고급 매매 패턴 AI 모델 훈련 시작...")
         
@@ -956,7 +956,7 @@ if __name__ == "__main__":
     
     # CSV 파일에서 데이터 로드하여 모델 훈련
     try:
-        ai.train_models(csv_path="../generate_data/output/trading_patterns_augmented.csv")
+        ai.train_models(csv_path="../generate_data/output/advanced_trading_data_augmented.csv")
         
         # 모델 저장
         ai.save_model('trained_trading_ai_v2.pkl')
