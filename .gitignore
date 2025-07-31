@@ -1,2 +1,4 @@
 /venv
 /.idea
+.python-version
+/generate_data/output
