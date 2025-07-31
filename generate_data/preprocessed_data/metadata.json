@@ -1,0 +1,31 @@
+{
+  "processed_date": "2025-07-31T16:52:49.243991",
+  "num_episodes": 179978,
+  "num_customers": 22314,
+  "num_features": 14,
+  "feature_names": {
+    "buy_features": [
+      "buy_recent_avg_return",
+      "buy_recent_win_rate",
+      "buy_consecutive_wins",
+      "buy_consecutive_losses",
+      "buy_days_since_last_trade",
+      "buy_trading_frequency_30d",
+      "buy_active_positions"
+    ],
+    "sell_features": [
+      "sell_current_return",
+      "sell_holding_days",
+      "sell_return_per_day",
+      "sell_holding_vs_avg",
+      "sell_return_vs_avg",
+      "sell_drawdown_pct",
+      "sell_runup_pct"
+    ],
+    "outcome_features": [
+      "outcome_return_rate",
+      "outcome_holding_days",
+      "outcome_profitable"
+    ]
+  }
+}

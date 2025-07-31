@@ -7,16 +7,13 @@ from typing import List, Dict, Optional
 from datetime import datetime
 import os
 from config import *
-import seaborn as sns
-
-sns.set_theme()
 
 # 한글 폰트 설정
-plt.rcParams['font.family'] = 'DejaVu Sans'
+plt.rcParams['font.family'] = ['Arial Unicode MS', 'AppleGothic', 'Malgun Gothic', 'DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False
 
 class PatternVisualizer:
-    """패턴 분석 결과 시각화 및 데이터셋 생성"""
+    """패턴 분석 결과 및 데이터셋 생성"""
     
     def __init__(self, pattern_data: List[Dict]):
         self.df = pd.DataFrame(pattern_data)
@@ -191,77 +188,3 @@ class PatternVisualizer:
         file_size = os.path.getsize(filename) / (1024 * 1024)  # MB 단위
         print(f"   - 파일 크기: {file_size:.2f} MB")
     
-    def create_pattern_analysis_chart(self, filename: str = OUTPUT_CHART):
-        """패턴 분석 차트 생성"""
-        if self.df.empty:
-            print("X 시각화할 데이터가 없습니다!")
-            return
-            
-        print("패턴 시각화 생성 중...")
-        
-        # 2x4 서브플롯 생성
-        fig, axes = plt.subplots(2, 4, figsize=(20, 12))
-        fig.suptitle('NVDA Trading Pattern Analysis (3 Months)', fontsize=16, fontweight='bold')
-        
-        # 색상 팔레트 설정
-        colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7']
-        
-        for i, (pattern, korean_name) in enumerate(zip(PATTERN_NAMES, PATTERN_KOREAN_NAMES)):
-            if pattern not in self.df.columns:
-                continue
-                
-            row, col = i // 4, i % 4
-            ax = axes[row, col]
-            
-            # 투자자 프로필별 분포 히스토그램
-            for j, profile in enumerate(self.df['investor_profile'].unique()):
-                profile_data = self.df[self.df['investor_profile'] == profile][pattern]
-                ax.hist(profile_data, alpha=0.7, label=profile, bins=15, 
-                       color=colors[j % len(colors)], density=True)
-            
-            ax.set_title(f'{korean_name}\n({pattern})', fontsize=11, fontweight='bold')
-            ax.set_xlabel('Score (0-1)', fontsize=9)
-            ax.set_ylabel('Density', fontsize=9)
-            ax.legend(fontsize=8)
-            ax.grid(True, alpha=0.3)
-            ax.set_xlim(0, 1)
-        
-        plt.tight_layout()
-        plt.savefig(filename, dpi=300, bbox_inches='tight', facecolor='white')
-        plt.show()
-        
-        print(f"시각화 저장 완료: {filename}")
-    
-    def create_correlation_heatmap(self):
-        """패턴 간 상관관계 히트맵"""
-        if self.df.empty:
-            return
-            
-        print("패턴 상관관계 분석...")
-        
-        # 8가지 패턴만 선택
-        pattern_df = self.df[PATTERN_NAMES].copy()
-        
-        # 상관관계 계산
-        correlation_matrix = pattern_df.corr()
-        
-        # 히트맵 생성
-        plt.figure(figsize=(12, 8))
-        mask = np.triu(np.ones_like(correlation_matrix, dtype=bool))
-        
-        sns.heatmap(correlation_matrix, 
-                   mask=mask,
-                   annot=True, 
-                   cmap='RdYlBu_r', 
-                   center=0,
-                   square=True,
-                   cbar_kws={"shrink": .8})
-        
-        plt.title('Trading Pattern Correlation Matrix', fontsize=14, fontweight='bold')
-        plt.xticks(range(len(PATTERN_NAMES)), PATTERN_KOREAN_NAMES, rotation=45, ha='right')
-        plt.yticks(range(len(PATTERN_NAMES)), PATTERN_KOREAN_NAMES, rotation=0)
-        plt.tight_layout()
-        plt.savefig('pattern_correlation.png', dpi=300, bbox_inches='tight')
-        plt.show()
-        
-        print("상관관계 히트맵 저장 완료")

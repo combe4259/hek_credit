@@ -140,10 +140,14 @@ INVESTOR_PROFILES = [
 # 더 많은 프로필 자동 생성 (기존 5개 + 추가 45개 = 총 50개)
 import numpy as np
 
+# 시드 고정 (재현성 확보)
+RANDOM_SEED = 100
+np.random.seed(RANDOM_SEED)
+
 # 각 매개변수의 변형을 만들어 추가 프로필 생성
 for i in range(45):
     # 랜덤하게 값을 조정하여 다양한 프로필 생성
-    np.random.seed(i)  # 재현 가능한 랜덤값
+    np.random.seed(RANDOM_SEED + i)  # 재현 가능한 랜덤값
     
     base_profile = np.random.choice(INVESTOR_PROFILES[:5])  # 기존 5개 프로필 중 하나를 기반으로
     
