@@ -2,7 +2,8 @@ import pandas as pd
 from tqdm import tqdm
 import nltk
 from nltk.tokenize import sent_tokenize
-import multiprocessing
+from concurrent.futures import ProcessPoolExecutor, as_completed
+import os
 
 # NLTK 데이터 확인 및 다운로드 (필요시만)
 try:
@@ -64,16 +65,39 @@ def process_article(content, nlp_pipeline, batch_size=64):
             'sentence_count': sent_count
             }
 
+nlp_pipeline = None
+
+def init_worker():
+    global nlp_pipeline
+    from transformers import AutoTokenizer, AutoModelForSequenceClassification, pipeline
+    model_name = "snunlp/KR-FinBert-SC"
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModelForSequenceClassification.from_pretrained(model_name)
+    nlp_pipeline = pipeline(
+        "text-classification",
+        model=model,
+        tokenizer=tokenizer,
+        device=-1,  # CPU 사용 명시
+        top_k=None,
+        max_length=512,
+        truncation=True
+    )
+
+def worker_process(content):
+    global nlp_pipeline
+    try:
+        return process_article(content, nlp_pipeline)
+    except Exception as e:
+        print(f"Worker process error: {e}")
+        return {'positive': 0, 'negative': 0, 'neutral': 0, 'sentence_count': 0}
+
 def main():
     """메인 실행 함수"""
     # 1) 모델 로드 (한 번만)
-    print("🤖 모델 로딩 중...")
-    from load_model import nlp_pipeline
-    print("✅ 모델 로드 완료")
+    print("🤖 감성분석 시작...")
     
     # 2) 데이터 불러오기
     import glob
-    import os
     
     csv_files = glob.glob("data/news_mapped_*.csv")
     if csv_files:
@@ -85,18 +109,29 @@ def main():
     
     print(f"📊 총 {len(df)}개 뉴스 처리 시작")
     
-    # 3) 순차 처리 (안정성 우선)
-    all_results = []
     contents = df["content"].tolist()
-    
-    # 진행률 표시 개선
-    for i, content in enumerate(tqdm(contents, desc="감성분석 진행")):
-        result = process_article(content, nlp_pipeline, batch_size=64)
-        all_results.append(result)
+    print(f"📊 총 {len(contents)}개 뉴스 처리 시작 (병렬 처리)")
+
+    # cpu_count = os.cpu_count() or 4
+    # worker_num = max(1, cpu_count - 2)
+    worker_num = 2
+
+    # ProcessPoolExecutor 사용: CPU 코어 수에 맞게 워커 지정 가능
+    with ProcessPoolExecutor(max_workers=worker_num, initializer=init_worker) as executor:
+        futures = [executor.submit(worker_process, content) for content in contents]
         
-        # 1000개마다 진행상황 출력
-        if (i + 1) % 1000 == 0:
-            print(f"진행: {i+1}/{len(contents)} 완료")
+        all_results = []
+        for i, future in enumerate(tqdm(as_completed(futures), total=len(futures), desc="감성분석 진행")):
+            try:
+                res = future.result()
+            except Exception as e:
+                print(f"에러 발생: {e}")
+                res = {'positive': 0, 'negative': 0, 'neutral': 0, 'sentence_count': 0}
+            all_results.append(res)
+            
+            # 1000개마다 진행상황 출력
+            if (i + 1) % 1000 == 0:
+                print(f"진행: {i+1}/{len(contents)} 완료")
     
     print("✅ 감성분석 완료")
     
