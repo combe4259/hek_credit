@@ -21,6 +21,12 @@ class TechnicalScorer:
         self.cached_data = {}
         self.rate_limit_delay = 0.3
         
+        # 티커 매핑 (클래스 B 우선)
+        self.ticker_mapping = {
+            'BRK': 'BRK-B',  # 버크셔 해서웨이 클래스B (일반 투자자용)
+            'BF': 'BF-B'     # 브라운 포만 클래스B (실제 거래량 높음)
+        }
+        
         # 룰셋 가중치 (투자자 동향 → PER/PBR로 대체)
         self.weights = {
             'analyst_opinion': 0.35,        # 35% (애널리스트 의견 + 목표주가)
@@ -29,9 +35,17 @@ class TechnicalScorer:
             'valuation_metrics': 0.15      # 15% (PER/PBR 밸류에이션) - 투자자 동향 대체
         }
         
-        print("🏦 KB국민은행 해커톤용 기술적 분석 시스템")
+        print("🏦 룰셋 기반 기술적 분석 시스템")
         print("✅ yfinance 실제 데이터만 사용")
         print("✅ 투자자 동향 → PER/PBR 밸류에이션으로 대체")
+        print("✅ BRK→BRK-B, BF→BF-B 티커 매핑 지원")
+
+    def _map_ticker(self, ticker: str) -> str:
+        """티커 매핑 (BRK → BRK-B, BF → BF-B)"""
+        mapped = self.ticker_mapping.get(ticker, ticker)
+        if mapped != ticker:
+            print(f"📈 티커 매핑: {ticker} → {mapped}")
+        return mapped
 
     def _normalize_score(self, raw_score: float) -> float:
         """점수를 0-100 스케일로 정규화"""
@@ -43,7 +57,8 @@ class TechnicalScorer:
         """애널리스트 의견 + 목표주가 분석 (yfinance 실제 데이터만)"""
         
         try:
-            stock = yf.Ticker(ticker)
+            mapped_ticker = self._map_ticker(ticker)
+            stock = yf.Ticker(mapped_ticker)
             info = stock.info
             
             score = 0
@@ -178,7 +193,8 @@ class TechnicalScorer:
         """수익률 분석 (한국식 기준 적용)"""
         
         try:
-            stock = yf.Ticker(ticker)
+            mapped_ticker = self._map_ticker(ticker)
+            stock = yf.Ticker(mapped_ticker)
             daily_hist = stock.history(period="1y")
             
             if len(daily_hist) < 10:
@@ -292,7 +308,8 @@ class TechnicalScorer:
         """거래량 분석 (한국식 기준 적용)"""
         
         try:
-            stock = yf.Ticker(ticker)
+            mapped_ticker = self._map_ticker(ticker)
+            stock = yf.Ticker(mapped_ticker)
             hist = stock.history(period="2mo")
             
             if len(hist) < 20:
@@ -378,7 +395,8 @@ class TechnicalScorer:
         """PER/PBR 밸류에이션 분석 (투자자 동향 대체)"""
         
         try:
-            stock = yf.Ticker(ticker)
+            mapped_ticker = self._map_ticker(ticker)
+            stock = yf.Ticker(mapped_ticker)
             info = stock.info
             
             score = 0
@@ -469,7 +487,7 @@ class TechnicalScorer:
     def calculate_total_score(self, ticker: str) -> Dict:
         """단일 티커 룰셋 기반 종합 점수 (메서드명 통일)"""
         
-        print(f"🏦 KB 해커톤 기술적 분석: {ticker}")
+        print(f"🏦 룰셋 기반 기술적 분석: {ticker}")
         
         # 각 영역별 분석
         analyst_score, analyst_details = self.analyze_analyst_opinion(ticker)
