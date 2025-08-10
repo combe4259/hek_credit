@@ -13,31 +13,69 @@ warnings.filterwarnings('ignore')
 
 def create_quality_score_label(df, w1=0.4, w2=0.3, w3=0.3):
     """
-    리스크 조정 품질 점수 라벨 생성
+    개선된 품질 점수 라벨 생성 (return_pct와 양의 상관관계 확보)
     """
     df = df.copy()
     
-    # NaN 값 먼저 처리
-    df = df.fillna(0)
+    # 1. 이상치 처리 (1%~99% 범위)
+    for col in ['return_pct', 'holding_period_days', 'entry_momentum_20d', 'entry_volatility_20d']:
+        if col in df.columns:
+            lower = df[col].quantile(0.01)
+            upper = df[col].quantile(0.99)
+            df[col] = df[col].clip(lower, upper)
     
-    # 1. 리스크 조정 수익률
-    risk_adj_return = df['return_pct'] / (df['position_size_pct'] * df['holding_period_days'] + 0.01)
+    # 2. 결측치 처리
+    required_cols = ['return_pct', 'holding_period_days', 'entry_momentum_20d', 'entry_volatility_20d']
+    available_cols = [col for col in required_cols if col in df.columns]
+    df = df.dropna(subset=available_cols)
     
-    # 2. 시장 조건 점수 (모멘텀/변동성 비율)
-    market_condition_score = df['entry_momentum_5d'] / (df['entry_volatility_5d'] + 0.01)
+    if len(df) == 0:
+        print("⚠️ Warning: No valid data after preprocessing")
+        return df, {}
     
-    # 3. 보유 기간 점수 (짧을수록 좋음)
-    holding_period_score = np.log(df['holding_period_days'] + 1)
+    # 3. 개선된 컴포넌트 계산
     
-    # 무한대와 NaN 처리
+    # (1) 리스크 조정 수익률: 변동성으로 리스크 조정
+    if 'entry_volatility_20d' in df.columns:
+        risk_adj_return = df['return_pct'] / (df['entry_volatility_20d'] + 0.01)
+    else:
+        # fallback: 단순 수익률
+        risk_adj_return = df['return_pct']
+    
+    # (2) 시장 조건 점수: 보유기간에 맞는 동적 지표 선택
+    def get_appropriate_indicators(row):
+        holding_days = row['holding_period_days']
+        
+        # 보유기간에 맞는 지표 선택
+        if holding_days <= 7:  # 단기: 5일 지표
+            momentum = row.get('entry_momentum_5d', 0)
+            volatility = row.get('entry_volatility_5d', 0.01)
+        elif holding_days <= 30:  # 중기: 20일 지표  
+            momentum = row.get('entry_momentum_20d', 0)
+            volatility = row.get('entry_volatility_20d', 0.01)
+        else:  # 장기: 60일 지표
+            momentum = row.get('entry_momentum_60d', 0)
+            volatility = row.get('entry_volatility_60d', 0.01)
+        
+        return momentum / (volatility + 0.01)
+    
+    print("🔄 보유기간별 동적 지표 계산 중...")
+    market_condition_score = df.apply(get_appropriate_indicators, axis=1)
+    
+    # (3) 보유 기간 점수: 보유 기간 대비 수익률 (일일 평균 수익률)
+    holding_period_score = np.maximum(0, df['return_pct'] / (df['holding_period_days'] + 0.01))
+    
+    # 4. 무한대와 NaN 처리
     risk_adj_return = np.nan_to_num(risk_adj_return, nan=0.0, posinf=1.0, neginf=-1.0)
     market_condition_score = np.nan_to_num(market_condition_score, nan=0.0, posinf=1.0, neginf=-1.0)
     holding_period_score = np.nan_to_num(holding_period_score, nan=0.0, posinf=1.0, neginf=-1.0)
     
-    # MinMax 정규화
-    scaler_risk = MinMaxScaler()
-    scaler_market = MinMaxScaler()
-    scaler_holding = MinMaxScaler()
+    # 5. RobustScaler로 정규화 (이상치 영향 최소화)
+    from sklearn.preprocessing import RobustScaler
+    
+    scaler_risk = RobustScaler()
+    scaler_market = RobustScaler()
+    scaler_holding = RobustScaler()
     
     # 정규화할 때도 안전하게 처리
     try:
@@ -55,10 +93,7 @@ def create_quality_score_label(df, w1=0.4, w2=0.3, w3=0.3):
     except:
         normalized_holding_period = np.zeros_like(holding_period_score)
     
-    # 보유기간은 역수로 변환 (짧을수록 높은 점수)
-    normalized_holding_period = 1 - normalized_holding_period
-    
-    # 최종 품질 점수 계산
+    # 6. 최종 품질 점수 계산
     quality_score = (w1 * normalized_risk_adj_return + 
                     w2 * normalized_market_condition + 
                     w3 * normalized_holding_period)
@@ -67,11 +102,26 @@ def create_quality_score_label(df, w1=0.4, w2=0.3, w3=0.3):
     quality_score = np.nan_to_num(quality_score, nan=0.5)
     df['quality_score'] = quality_score
     
-    print(f"\n📊 Quality Score 생성:")
+    # 7. 컴포넌트별 상관관계 분석
+    correlations = {}
+    if len(df) > 10:  # 충분한 데이터가 있을 때만
+        correlations['risk_return_corr'] = np.corrcoef(risk_adj_return, df['return_pct'])[0, 1]
+        correlations['market_return_corr'] = np.corrcoef(market_condition_score, df['return_pct'])[0, 1]
+        correlations['holding_return_corr'] = np.corrcoef(holding_period_score, df['return_pct'])[0, 1]
+        correlations['quality_return_corr'] = np.corrcoef(quality_score, df['return_pct'])[0, 1]
+    
+    print(f"\n📊 개선된 Quality Score 생성:")
     print(f"  가중치: Risk({w1:.1f}), Market({w2:.1f}), Holding({w3:.1f})")
     print(f"  평균: {quality_score.mean():.4f}")
     print(f"  표준편차: {quality_score.std():.4f}")
     print(f"  범위: {quality_score.min():.4f} ~ {quality_score.max():.4f}")
+    
+    if correlations:
+        print(f"\n🔍 컴포넌트-수익률 상관관계:")
+        print(f"  Risk 조정 수익률: {correlations.get('risk_return_corr', 0):.4f}")
+        print(f"  Market 조건: {correlations.get('market_return_corr', 0):.4f}")
+        print(f"  Holding 효율성: {correlations.get('holding_return_corr', 0):.4f}")
+        print(f"  최종 Quality Score: {correlations.get('quality_return_corr', 0):.4f}")
     
     # 정규화 객체들도 반환 (예측시 필요)
     scalers = {
@@ -86,14 +136,17 @@ def prepare_advanced_features(df):
     """
     정교한 특징 엔지니어링 (데이터 리키지 제거)
     Quality Score 계산에 사용된 변수들 제외:
-    - return_pct, position_size_pct, holding_period_days, entry_momentum_5d, entry_volatility_5d
+    - return_pct, position_size_pct, holding_period_days
+    - entry_momentum_5d, entry_volatility_5d (기본)
+    - entry_momentum_20d, entry_volatility_20d (동적 지표에서 사용)
+    - entry_momentum_60d, entry_volatility_60d (동적 지표에서 사용)
     """
     
-    # 기본 특징들 (리키지 변수 제외)
+    # 기본 특징들 (Quality Score에 사용된 모든 변수 제외)
     features = [
-        # === 진입 시점 기술적 지표 ===
-        'entry_momentum_20d', 'entry_momentum_60d',  # entry_momentum_5d 제외
-        'entry_volatility_20d', 'entry_volatility_60d',  # entry_volatility_5d 제외
+        # === 진입 시점 기술적 지표 (모멘텀/변동성 제외) ===
+        # entry_momentum_5d, entry_momentum_20d, entry_momentum_60d 모두 제외
+        # entry_volatility_5d, entry_volatility_20d, entry_volatility_60d 모두 제외
         'entry_ma_dev_5d', 'entry_ma_dev_20d', 'entry_ma_dev_60d',
         'entry_vol_change_5d', 'entry_vol_change_20d', 'entry_vol_change_60d',
         'entry_ratio_52w_high',
@@ -114,10 +167,10 @@ def prepare_advanced_features(df):
         'entry_pe_ratio', 'entry_pb_ratio', 'entry_roe',
         'entry_operating_margin', 'entry_debt_equity_ratio',
         
-        # === 변화량 지표 ===
-        'change_momentum_5d', 'change_momentum_20d', 'change_momentum_60d',
+        # === 변화량 지표 (모멘텀/변동성 관련 제외) ===
+        # 'change_momentum_5d', 'change_momentum_20d', 'change_momentum_60d', 제외
+        # 'change_volatility_5d', 'change_volatility_20d', 'change_volatility_60d', 제외
         'change_ma_dev_5d', 'change_ma_dev_20d', 'change_ma_dev_60d',
-        'change_volatility_5d', 'change_volatility_20d', 'change_volatility_60d',
         'change_ratio_52w_high'
     ]
     
@@ -127,21 +180,21 @@ def prepare_advanced_features(df):
     
     # === 고급 특징 엔지니어링 (데이터 리키지 제거) ===
     
-    # 1. 리스크 조정 지표들 (리키지 변수 사용 안 함)
-    X['momentum_volatility_ratio_20d'] = df['entry_momentum_20d'] / (df['entry_volatility_20d'] + 0.01)
-    X['momentum_volatility_ratio_60d'] = df['entry_momentum_60d'] / (df['entry_volatility_60d'] + 0.01)
+    # 1. 리스크 조정 지표들 (모멘텀/변동성 사용 금지)
+    # X['momentum_volatility_ratio_20d'] 제거 (데이터 리키지)
+    # X['momentum_volatility_ratio_60d'] 제거 (데이터 리키지)
     
-    # 2. 시장 대비 상대 성과 (return_pct 사용 안 함)
-    if 'market_entry_volatility_20d' in df.columns:
-        X['relative_volatility'] = df['entry_volatility_20d'] / (df['market_entry_volatility_20d'] + 0.01)
+    # 2. 시장 대비 상대 성과 (모멘텀/변동성 제거)
+    # X['relative_volatility'] 제거 (entry_volatility_20d 사용 금지)
     
-    # 3. 타이밍 지표들
-    X['entry_timing_score'] = (df['entry_momentum_20d'] * df['entry_ratio_52w_high']) / (df['entry_volatility_20d'] + 0.01)
-    X['exit_timing_score'] = (df['exit_momentum_20d'] * df['exit_ratio_52w_high']) / (df['exit_volatility_20d'] + 0.01)
+    # 3. 타이밍 지표들 (모멘텀/변동성 제거)  
+    # X['entry_timing_score'] 제거 (entry_momentum_20d, entry_volatility_20d 사용 금지)
+    # X['exit_timing_score'] 제거 (exit_volatility_20d 사용)
+    X['exit_timing_score'] = (df['exit_momentum_20d'] * df['exit_ratio_52w_high']) / (df['exit_ma_dev_20d'].abs() + 0.01)
     
-    # 4. 변화율 지표들 (holding_period_days 사용 안 함)
-    X['momentum_change_ratio'] = df['change_momentum_20d'] / (df['entry_momentum_20d'] + 0.01)
-    X['volatility_stability'] = df['entry_volatility_20d'] / (df['change_volatility_20d'].abs() + 0.01)
+    # 4. 변화율 지표들 (모멘텀/변동성 제거)
+    # X['momentum_change_ratio'] 제거 (change_momentum_20d, entry_momentum_20d 사용 금지)  
+    # X['volatility_stability'] 제거 (entry_volatility_20d, change_volatility_20d 사용 금지)
     
     # 6. 시장 조건 종합 점수
     if all(col in df.columns for col in ['market_entry_ma_return_20d', 'market_entry_volatility_20d']):
@@ -151,12 +204,13 @@ def prepare_advanced_features(df):
     if all(col in df.columns for col in ['entry_roe', 'entry_debt_equity_ratio', 'entry_operating_margin']):
         X['financial_health_score'] = (df['entry_roe'] * df['entry_operating_margin']) / (df['entry_debt_equity_ratio'] + 0.01)
     
-    # 5. 기술적 강도 지표
-    X['technical_strength'] = (df['entry_momentum_20d'] * df['entry_ratio_52w_high']) / (df['entry_ma_dev_20d'].abs() + 0.01)
+    # 5. 기술적 강도 지표 (모멘텀 제거)
+    X['technical_strength'] = df['entry_ratio_52w_high'] / (df['entry_ma_dev_20d'].abs() + 0.01)
     
-    # 6. 진입-청산 비교 지표
-    X['momentum_consistency'] = df['exit_momentum_20d'] / (df['entry_momentum_20d'] + 0.01)
-    X['volatility_trend'] = df['exit_volatility_20d'] / (df['entry_volatility_20d'] + 0.01)
+    # 6. 진입-청산 비교 지표 (모멘텀/변동성 제거)
+    # X['momentum_consistency'] 제거 (entry_momentum_20d, exit_momentum_20d 사용 금지)
+    # X['volatility_trend'] 제거 (entry_volatility_20d, exit_volatility_20d 사용 금지)
+    X['ma_dev_trend'] = df['exit_ma_dev_20d'] / (df['entry_ma_dev_20d'] + 0.01)
     
     # 결측치 처리
     X = X.fillna(0)
@@ -220,13 +274,15 @@ def optimize_quality_score_weights():
     val_df = df.iloc[n_train:n_train+n_val].copy()
     print(f"검증 데이터: {len(val_df):,}개")
     
-    # 여러 초기값 후보들
+    # 여러 초기값 후보들 (Market 조건 음수 상관관계 고려)
     initial_weight_candidates = [
-        [0.4, 0.3, 0.3],  # 현재
-        [0.7, 0.2, 0.1],  # Risk 위주
-        [0.2, 0.7, 0.1],  # Market 위주
-        [0.6, 0.35, 0.05],  # 수정된 가중치
-        [0.34, 0.33, 0.33]  # 균등
+        [0.4, 0.3, 0.3],   # 현재
+        [0.7, 0.2, 0.1],   # Risk 위주
+        [0.8, 0.1, 0.1],   # Risk 극대화
+        [0.3, 0.1, 0.6],   # Holding 위주 (상관계수 0.28)
+        [0.5, 0.0, 0.5],   # Market 제외
+        [0.6, 0.05, 0.35], # Risk + Holding
+        [0.33, 0.33, 0.34] # 균등
     ]
     
     # 기본 초기값
@@ -257,16 +313,14 @@ def optimize_quality_score_weights():
         """최적화 목적함수 (차이를 최대화하므로 음수 반환)"""
         return -calculate_bucket_return_difference(weights)
     
-    # 2. 제약조건 설정
-    from scipy.optimize import differential_evolution
-    from scipy.optimize import LinearConstraint
+    # 2. 제약조건 설정 (SLSQP 사용)
+    from scipy.optimize import minimize
     
     # 각 가중치는 0 이상 1 이하
     bounds = [(0.0, 1.0), (0.0, 1.0), (0.0, 1.0)]
     
-    # 가중치 합이 1이 되도록 제약 (LinearConstraint 사용)
-    # A @ x = b 형태: [1, 1, 1] @ [w1, w2, w3] = 1
-    constraints = LinearConstraint([[1, 1, 1]], [1], [1])
+    # 가중치 합이 1이 되도록 제약
+    constraints = {'type': 'eq', 'fun': lambda w: w[0] + w[1] + w[2] - 1.0}
     
     # 현재 성능 확인
     current_diff = calculate_bucket_return_difference(initial_weights)
@@ -282,28 +336,27 @@ def optimize_quality_score_weights():
     best_weights = initial_weights
     
     for i, candidate in enumerate(initial_weight_candidates):
-        print(f"\n--- 시도 {i+1}/{len(initial_weight_candidates)}: {candidate} ---")
+        print(f"\n--- SLSQP 시도 {i+1}/{len(initial_weight_candidates)}: {candidate} ---")
         
         try:
             # 각 후보로 성능 확인
             candidate_diff = calculate_bucket_return_difference(candidate)
-            print(f"후보 성능: {candidate_diff:.4f}")
+            print(f"초기 성능: {candidate_diff:.4f}")
             
-            # Differential Evolution 실행
-            result = differential_evolution(
+            # SLSQP 최적화 실행
+            result = minimize(
                 objective_function,
+                candidate,  # 초기값
+                method='SLSQP',
                 bounds=bounds,
                 constraints=constraints,
-                seed=42+i,  # 다른 시드 사용
-                maxiter=30,  # 반복횟수 줄임
-                popsize=10,  # 인구 크기 줄임
-                polish=True,
-                disp=False  # 출력 줄임
+                options={'disp': False, 'maxiter': 100}
             )
             
             if result.success:
                 opt_diff = calculate_bucket_return_difference(result.x)
                 print(f"최적화 결과: {result.x} → 성능: {opt_diff:.4f}")
+                print(f"개선폭: {opt_diff - candidate_diff:.4f}")
                 
                 if opt_diff > best_diff:
                     best_result = result
@@ -355,7 +408,8 @@ def train_quality_score_model_with_optimized_weights(optimal_weights):
     print(f"전체 데이터: {len(df):,}개")
     
     # 2. Quality Score 라벨 생성 (최적화된 가중치 사용)
-    print("\n🏷️ Quality Score 라벨 생성 중 (최적화된 가중치)...")
+    print(f"\n🏷️ Quality Score 라벨 생성 중 (최적화된 가중치)...")
+    print(f"🔍 전달할 가중치 확인: Risk({optimal_weights[0]:.3f}), Market({optimal_weights[1]:.3f}), Holding({optimal_weights[2]:.3f})")
     df, scalers = create_quality_score_label(df, optimal_weights[0], optimal_weights[1], optimal_weights[2])
     
     # NaN 체크

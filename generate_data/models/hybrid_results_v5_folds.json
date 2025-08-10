@@ -1,0 +1,58 @@
+[
+  {
+    "fold_id": 1,
+    "fold_info": {
+      "fold_id": 1,
+      "train_start": "2018-01-02",
+      "train_end": "2021-01-02",
+      "val_start": "2021-01-02",
+      "val_end": "2021-07-02",
+      "test_start": "2021-07-02",
+      "test_end": "2022-01-02"
+    },
+    "model_results": {},
+    "hyperparameter_search": {}
+  },
+  {
+    "fold_id": 2,
+    "fold_info": {
+      "fold_id": 2,
+      "train_start": "2018-04-02",
+      "train_end": "2021-04-02",
+      "val_start": "2021-04-02",
+      "val_end": "2021-10-02",
+      "test_start": "2021-10-02",
+      "test_end": "2022-04-02"
+    },
+    "model_results": {},
+    "hyperparameter_search": {}
+  },
+  {
+    "fold_id": 3,
+    "fold_info": {
+      "fold_id": 3,
+      "train_start": "2018-07-02",
+      "train_end": "2021-07-02",
+      "val_start": "2021-07-02",
+      "val_end": "2022-01-02",
+      "test_start": "2022-01-02",
+      "test_end": "2022-07-02"
+    },
+    "model_results": {},
+    "hyperparameter_search": {}
+  },
+  {
+    "fold_id": 4,
+    "fold_info": {
+      "fold_id": 4,
+      "train_start": "2018-10-02",
+      "train_end": "2021-10-02",
+      "val_start": "2021-10-02",
+      "val_end": "2022-04-02",
+      "test_start": "2022-04-02",
+      "test_end": "2022-10-02"
+    },
+    "model_results": {},
+    "hyperparameter_search": {}
+  }
+]
