@@ -1,0 +1,20 @@
+{
+  "model_name": "Random Forest",
+  "features": [
+    "holding_period_days",
+    "position_size_pct",
+    "entry_momentum_5d",
+    "entry_momentum_20d",
+    "entry_volatility_5d",
+    "entry_volatility_20d",
+    "entry_ma_dev_5d",
+    "entry_ma_dev_20d",
+    "entry_vol_change_5d",
+    "entry_vol_change_20d",
+    "entry_ratio_52w_high"
+  ],
+  "val_f1": 0.640080316805176,
+  "test_f1": 0.5462373201226705,
+  "label_threshold": 0.005,
+  "training_date": "2025-08-07"
+}

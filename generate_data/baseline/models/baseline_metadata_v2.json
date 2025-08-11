@@ -1,0 +1,23 @@
+{
+  "model_name": "XGBoost",
+  "features": [
+    "holding_period_days",
+    "position_size_pct",
+    "entry_momentum_5d",
+    "entry_momentum_20d",
+    "entry_volatility_5d",
+    "entry_volatility_20d",
+    "entry_ma_dev_5d",
+    "entry_ma_dev_20d",
+    "entry_vol_change_5d",
+    "entry_vol_change_20d",
+    "entry_ratio_52w_high",
+    "market_entry_ma_return_5d",
+    "market_entry_ma_return_20d",
+    "market_entry_volatility_20d"
+  ],
+  "val_f1": 0.2934212132308068,
+  "test_f1": 0.41782085126387736,
+  "label_type": "excess_return > 0",
+  "training_date": "2025-08-07"
+}
