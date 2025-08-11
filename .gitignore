@@ -2,3 +2,31 @@
 /.idea
 .python-version
 /generate_data/output
+/generate_data/preprocessed_data
+/generate_data/results
+/generate_data/baseline/data
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build output
+dist/
+build/
+
+# Env files
+.env
+.env.local
+
+# Mac / Windows
+.DS_Store
+Thumbs.db
+
+env/
+venv/
+
+/crawling/node_modules
+__pycache__/
+*.pyc
+
