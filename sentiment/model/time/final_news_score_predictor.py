@@ -15,7 +15,7 @@ from sklearn.decomposition import PCA
 import sys
 import os
 import traceback
-from google.colab import drive
+# from google.colab import drive  # Colab용 - 로컬에서는 주석처리
 import matplotlib.pyplot as plt
 
 warnings.filterwarnings('ignore')
@@ -299,10 +299,11 @@ class FinalNewsScorePredictor:
 # 실행
 # =============================================================================
 if __name__ == "__main__":
-    drive.mount('/content/drive', force_remount=True)
+    # drive.mount('/content/drive', force_remount=True)  # Colab용 - 로컬에서는 주석처리
 
     try:
-        DRIVE_DATA_PATH = "/content/drive/MyDrive/news_full_features_robust.csv"
+        # 로컬 경로로 변경
+        DRIVE_DATA_PATH = "/Users/inter4259/Desktop/news_full_features_robust.csv"
         df_news = pd.read_csv(DRIVE_DATA_PATH, engine='python')
 
         predictor = FinalNewsScorePredictor()
