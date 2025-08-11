@@ -1,0 +1,154 @@
+[
+  {
+    "fold_id": 1,
+    "fold_info": {
+      "fold_id": 1,
+      "train_start": "2018-01-02",
+      "train_end": "2021-01-02",
+      "val_start": "2021-01-02",
+      "val_end": "2021-07-02",
+      "test_start": "2021-07-02",
+      "test_end": "2022-01-02"
+    },
+    "model_results": {
+      "A_quality_model": {
+        "val_r2": 0.16330202911998515,
+        "test_r2": 0.8422238552663787,
+        "train_samples": 84151,
+        "val_samples": 21976,
+        "test_samples": 12323,
+        "features_used": 38
+      },
+      "B_entry_model": {
+        "val_r2": 0.7940246646129615,
+        "test_r2": 0.7132811852505303,
+        "train_samples": 35133,
+        "val_samples": 17402,
+        "test_samples": 10400,
+        "features_used": 24
+      }
+    },
+    "market_stats": {
+      "train_vix_mean": 26.462028813319886,
+      "val_vix_mean": 21.17097975048656,
+      "test_vix_mean": 19.24267961000453,
+      "train_return_mean": 0.1832621555517458,
+      "val_return_mean": 0.09694372931545027,
+      "test_return_mean": 0.022088076027928623
+    }
+  },
+  {
+    "fold_id": 2,
+    "fold_info": {
+      "fold_id": 2,
+      "train_start": "2018-04-02",
+      "train_end": "2021-04-02",
+      "val_start": "2021-04-02",
+      "val_end": "2021-10-02",
+      "test_start": "2021-10-02",
+      "test_end": "2022-04-02"
+    },
+    "model_results": {
+      "A_quality_model": {
+        "val_r2": -2.0850726847997287,
+        "test_r2": 0.8892501758148266,
+        "train_samples": 79050,
+        "val_samples": 16397,
+        "test_samples": 14711,
+        "features_used": 38
+      },
+      "B_entry_model": {
+        "val_r2": 0.9468591234044142,
+        "test_r2": 0.814825389857644,
+        "train_samples": 44842,
+        "val_samples": 13424,
+        "test_samples": 11038,
+        "features_used": 24
+      }
+    },
+    "market_stats": {
+      "train_vix_mean": 29.363673874496886,
+      "val_vix_mean": 18.48399264021826,
+      "test_vix_mean": 24.253355040207683,
+      "train_return_mean": 0.20711603054360345,
+      "val_return_mean": 0.05753692388574099,
+      "test_return_mean": -0.012230543987506507
+    }
+  },
+  {
+    "fold_id": 3,
+    "fold_info": {
+      "fold_id": 3,
+      "train_start": "2018-07-02",
+      "train_end": "2021-07-02",
+      "val_start": "2021-07-02",
+      "val_end": "2022-01-02",
+      "test_start": "2022-01-02",
+      "test_end": "2022-07-02"
+    },
+    "model_results": {
+      "A_quality_model": {
+        "val_r2": -1.6876628941589198,
+        "test_r2": 0.9107258198264253,
+        "train_samples": 86565,
+        "val_samples": 12323,
+        "test_samples": 15022,
+        "features_used": 38
+      },
+      "B_entry_model": {
+        "val_r2": 0.9582253754379743,
+        "test_r2": 0.73346063624992,
+        "train_samples": 52535,
+        "val_samples": 10400,
+        "test_samples": 10368,
+        "features_used": 24
+      }
+    },
+    "market_stats": {
+      "train_vix_mean": 28.48277677750739,
+      "val_vix_mean": 19.24267961000453,
+      "test_vix_mean": 27.364079882606532,
+      "train_return_mean": 0.19707833964185317,
+      "val_return_mean": 0.022088076027928623,
+      "test_return_mean": -0.00638907127975251
+    }
+  },
+  {
+    "fold_id": 4,
+    "fold_info": {
+      "fold_id": 4,
+      "train_start": "2018-10-02",
+      "train_end": "2021-10-02",
+      "val_start": "2021-10-02",
+      "val_end": "2022-04-02",
+      "test_start": "2022-04-02",
+      "test_end": "2022-10-02"
+    },
+    "model_results": {
+      "A_quality_model": {
+        "val_r2": 0.8547868991634017,
+        "test_r2": 0.8948415341395064,
+        "train_samples": 91748,
+        "val_samples": 14711,
+        "test_samples": 9917,
+        "features_used": 38
+      },
+      "B_entry_model": {
+        "val_r2": 0.824624930397116,
+        "test_r2": 0.7427451027852238,
+        "train_samples": 58266,
+        "val_samples": 11038,
+        "test_samples": 6760,
+        "features_used": 24
+      }
+    },
+    "market_stats": {
+      "train_vix_mean": 28.03436398518361,
+      "val_vix_mean": 24.253355040207683,
+      "test_vix_mean": 26.934046082121796,
+      "train_return_mean": 0.18993433451303407,
+      "val_return_mean": -0.012230543987506507,
+      "test_return_mean": 0.015289206319175101
+    }
+  }
+]
