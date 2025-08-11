@@ -67,8 +67,8 @@ class DataLoader:
                 df = df[['date'] + list(column_mapping.keys())]
                 
                 # 결측값 처리
-                df.ffill(inplace=True)
-                df.bfill(inplace=True)
+                df.fillna(method='ffill', inplace=True)
+                df.fillna(method='bfill', inplace=True)
                 
                 # 기본 정보 출력
                 date_min = df['date'].min().strftime('%Y-%m-%d') if hasattr(df['date'], 'min') else 'N/A'
@@ -94,20 +94,11 @@ class DataLoader:
                 time.sleep(retry_delay)
     
     def calculate_technical_indicators(self) -> pd.DataFrame:
-        """
-        기술적 지표를 계산합니다.
-        ta 라이브러리를 사용하여 다양한 기술적 지표를 계산합니다.
-        
-        Returns:
-            pd.DataFrame: 기술적 지표가 추가된 데이터프레임
-            
-        Raises:
-            ValueError: 데이터가 로드되지 않은 경우
-        """
+        """기술 지표 계산"""
         if self.data is None or self.data.empty:
             raise ValueError("데이터가 로드되지 않았습니다. 먼저 load_data()를 호출해주세요.")
             
-        print("📊 기술적 지표 계산 중...")
+        print("기술적 지표 계산 중...")
         df = self.data.copy()
         
         # 데이터 정제
@@ -197,8 +188,8 @@ class DataLoader:
         df.interpolate(method='linear', inplace=True)
         
         # 그래도 남아있는 결측값은 0 또는 이전 값으로 채우기
-        df.ffill(inplace=True)  # 이전 값으로 채우기
-        df.bfill(inplace=True)  # 이후 값으로 채우기
+        df.fillna(method='ffill', inplace=True)  # 이전 값으로 채우기
+        df.fillna(method='bfill', inplace=True)  # 이후 값으로 채우기
         df.fillna(0, inplace=True)  # 그래도 남아있으면 0으로 채우기
         
         self.data = df
