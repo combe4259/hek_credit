@@ -2,6 +2,11 @@
 
 /venv
 /.idea
+.python-version
+/generate_data/output
+/generate_data/preprocessed_data
+/generate_data/results
+/generate_data/baseline/data
 
 # Node.js
 node_modules/
@@ -28,3 +33,10 @@ venv/
 __pycache__/
 *.pyc
 
+# Model files (too large for GitHub)
+*.pkl
+*.joblib
+*.model
+*.h5
+*.pt
+*.pth
