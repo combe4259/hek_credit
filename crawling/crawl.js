@@ -91,7 +91,6 @@ async function isDuplicate(collection, title, url) {
     });
     return !!existing;
 }
-
 // 네이버 뉴스 통합뷰 URL로 변환
 function convertToNaverNewsView(url) {
     // 이미 네이버 뉴스 통합뷰 URL인 경우
