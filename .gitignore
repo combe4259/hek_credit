@@ -30,3 +30,11 @@ venv/
 __pycache__/
 *.pyc
 
+# Model files (too large for GitHub)
+*.pkl
+*.joblib
+*.model
+*.h5
+*.pt
+*.pth
+
