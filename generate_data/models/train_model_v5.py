@@ -15,19 +15,7 @@ import torch
 warnings.filterwarnings('ignore')
 
 class ImprovedHybridTradingAI:
-    """
-    개선된 하이브리드 트레이딩 AI v5
-    
-    구조:
-    1. A유형: 완료된 거래의 정확한 품질 평가 (사후 분석) - v4에서 복사
-    2. B유형: 실제 수익률 기반 진입 조건 점수 (0-100점) - 완전히 새로 설계
-    
-    개선점:
-    - B유형: 규칙 기반 → 실제 데이터 기반 점수화
-    - B유형: 정교한 기술적 지표 추가
-    - Data Leakage 완전 제거 유지
-    """
-    
+
     def __init__(self, train_months=36, val_months=6, test_months=6, step_months=3, use_global_split=True):
         self.train_months = train_months
         self.val_months = val_months
@@ -35,12 +23,12 @@ class ImprovedHybridTradingAI:
         self.step_months = step_months
         self.use_global_split = use_global_split
         
-        # ===== A유형: 거래 품질 분석기 (v4와 동일) =====
+        # ===== 거래 품질 분석기 =====
         self.a_type_quality_model = None      
         self.a_type_quality_scalers = {}      
         self.a_type_quality_features = None   
         
-        # ===== B유형: 개선된 진입 조건 평가기 (새로 설계) =====  
+        # ===== 진입 조건 평가=====
         self.b_type_entry_model = None        
         self.b_type_entry_scalers = {}        
         self.b_type_entry_features = None     
@@ -51,11 +39,11 @@ class ImprovedHybridTradingAI:
         self.best_params_b = None
     
     # ================================
-    # A유형: 사후 품질 평가 (v4에서 그대로 복사)
+    # 거래 품질 분석
     # ================================
     
+    #거래 품질 정수 생성
     def create_a_type_quality_score(self, df, risk_scaler=None, eff_scaler=None, verbose=False):
-        """A유형: 완료된 거래의 품질 점수 생성 (모든 정보 활용 가능)"""
         if verbose:
             print("🎯 A유형: Quality Score 생성 중...")
         
@@ -66,9 +54,10 @@ class ImprovedHybridTradingAI:
         df['entry_volatility_20d'] = df['entry_volatility_20d'].fillna(0)
         df['entry_ratio_52w_high'] = df['entry_ratio_52w_high'].fillna(0)
         df['holding_period_days'] = df['holding_period_days'].fillna(0)
-        
+
+
         # Risk Management Quality (40%) - 리스크 대비 성과
-        volatility_safe = np.maximum(df['entry_volatility_20d'], 0.01)
+        volatility_safe = np.maximum(df['entry_volatility_20d'], 0.0001)
         df['risk_adj_return'] = df['return_pct'] / volatility_safe
         df['risk_adj_return'] = np.where(
             np.isinf(df['risk_adj_return']) | np.isnan(df['risk_adj_return']), 
@@ -79,7 +68,9 @@ class ImprovedHybridTradingAI:
         df['price_safety'] = (100 - ratio_safe) / 100
         
         df['risk_management_score'] = df['risk_adj_return'] * 0.6 + df['price_safety'] * 0.4
-        
+
+
+        #FIXME: 여기 라벨링 고도화
         # Efficiency Quality (60%) - 시간 대비 효율성
         holding_safe = np.maximum(df['holding_period_days'], 1)
         df['time_efficiency'] = df['return_pct'] / holding_safe
@@ -112,13 +103,13 @@ class ImprovedHybridTradingAI:
             print(f"  평균: {df['a_type_quality_score'].mean():.4f}")
         
         return df
-    
+
+   #품질 평가 피처
     def prepare_a_type_features(self, df, verbose=False):
-        """A유형: 품질 평가용 피처 준비 (완료된 거래의 모든 정보 사용 가능)"""
         if verbose:
-            print("🔧 A유형: 품질 평가용 피처 준비 중...")
+            print("A: 품질 평가용 피처 준비")
         
-        # Quality Score 계산용 피처는 제외
+        # 라벨링 포함된 피처 제외
         excluded_features = {
             'return_pct', 'entry_volatility_20d', 'entry_ratio_52w_high', 'holding_period_days',
             'risk_adj_return', 'price_safety', 'risk_management_score',
@@ -147,7 +138,7 @@ class ImprovedHybridTradingAI:
         ]
         available_a_type_features.extend([col for col in entry_technical_indicators if col in df.columns])
         
-        # ===== 3. 종료 시점 지표 (A유형만 사용 가능!) =====
+        # ===== 3. 종료 시점 지표=====
         exit_technical_indicators = [
             # 종료 시점 모멘텀
             'exit_momentum_5d', 'exit_momentum_20d', 'exit_momentum_60d',
@@ -160,7 +151,7 @@ class ImprovedHybridTradingAI:
         ]
         available_a_type_features.extend([col for col in exit_technical_indicators if col in df.columns])
         
-        # ===== 4. 변화량 지표 (A유형만 사용 가능!) =====
+        # ===== 4. 변화량 지표  =====
         change_indicators = [
             # 모멘텀 변화
             'change_momentum_5d', 'change_momentum_20d', 'change_momentum_60d',
@@ -173,7 +164,7 @@ class ImprovedHybridTradingAI:
         ]
         available_a_type_features.extend([col for col in change_indicators if col in df.columns])
         
-        # ===== 5. 보유 기간 중 시장 정보 (A유형만 사용 가능!) =====
+        # ===== 5. 보유 기간 중 시장 정보 =====
         holding_period_info = [
             'market_return_during_holding',  # 보유 기간 중 시장 수익률
             'excess_return'                  # 시장 대비 초과 수익률
@@ -188,24 +179,22 @@ class ImprovedHybridTradingAI:
             print(f"  A유형 사용 피처: {len(self.a_type_quality_features)}개")
             print(f"  포함된 피처 유형: entry, exit, change, holding (모든 정보 활용)")
         
-        # 숫자형 데이터만 선택 (XGBoost 호환성)
+        # 숫자형 데이터만 선택
         feature_data = df[self.a_type_quality_features].select_dtypes(include=[np.number])
         
         if verbose and len(feature_data.columns) != len(self.a_type_quality_features):
-            print(f"  ⚠️ 비숫자형 칼럼 제외: {len(self.a_type_quality_features) - len(feature_data.columns)}개")
+            print(f"비숫자형 칼럼 제외: {len(self.a_type_quality_features) - len(feature_data.columns)}개")
         
         return feature_data
     
     # ================================
-    # B유형: 개선된 진입 조건 분석 (완전히 새로 설계)
+    # 매수 신호 점수화
     # ================================
     
     def create_b_type_entry_score(self, df, verbose=False):
-        """B유형: 종합 매수 신호 점수 (0-100점) - 기술적+펀더멘털+시장환경"""
         if verbose:
-            print("🚀 B유형 (매수 신호 AI): 종합 매수 신호 점수 생성 중...")
-            print("   → 기술적 분석 + 펀더멘털 + 시장 환경을 종합한 매수 타이밍 점수")
-        
+            print("🚀 B:매수 신호 점수 생성 중")
+
         df = df.copy()
         
         # ===== 1. 기술적 신호 (40%) =====
@@ -228,15 +217,13 @@ class ImprovedHybridTradingAI:
         df['b_type_entry_score'] = np.clip(df['b_type_entry_score'], 0, 100)
         
         if verbose:
-            print(f"  ✅ 종합 매수 신호 점수 생성 완료")
+            print(f"  ✅ 매수 신호 점수 생성 완료")
             print(f"  점수 범위: {df['b_type_entry_score'].min():.1f} ~ {df['b_type_entry_score'].max():.1f}")
             print(f"  점수 평균: {df['b_type_entry_score'].mean():.1f}")
-            print(f"  구성: 기술적(40%) + 펀더멘털(30%) + 시장환경(30%)")
-        
         return df
-    
+
+    """기술적 분석 신호 계산"""
     def _calculate_technical_signals(self, df):
-        """기술적 분석 신호 계산 (0-100점)"""
         signals = []
         
         # 1. 모멘텀 신호 (25%)
@@ -244,7 +231,7 @@ class ImprovedHybridTradingAI:
         # 적당한 하락 후 반등 시작이 매수 신호
         momentum_signal = np.where(
             momentum_20d < -15, 20,      # 과도한 하락
-            np.where(momentum_20d < -5, 85,   # 적당한 하락 (매수 기회!)
+            np.where(momentum_20d < -5, 85,   # 적당한 하락- 매수 기회
                 np.where(momentum_20d < 5, 70,    # 횡보
                     np.where(momentum_20d < 15, 50, 30))))  # 과열
         signals.append(momentum_signal * 0.25)
@@ -253,24 +240,26 @@ class ImprovedHybridTradingAI:
         ma_dev_20d = df['entry_ma_dev_20d'].fillna(0)
         # 이평선 아래 있으면서 회복 조짐이 매수 신호
         ma_signal = np.where(
-            ma_dev_20d < -10, 85,        # 크게 이탈 (매수 기회!)
+            ma_dev_20d < -10, 85,
             np.where(ma_dev_20d < -5, 70,     # 적당히 이탈
                 np.where(ma_dev_20d < 5, 50,      # 근처
                     np.where(ma_dev_20d < 10, 30, 15))))  # 과열
         signals.append(ma_signal * 0.25)
         
         # 3. 과매도/과매수 신호 (25%)
+        #FIXME: 결측값 처리
         ratio_52w = df['entry_ratio_52w_high'].fillna(50)
         # 52주 고점 대비 낮을수록 매수 신호
         oversold_signal = (100 - ratio_52w)  # 0-100 자동 변환
         signals.append(oversold_signal * 0.25)
         
         # 4. 변동성 신호 (25%)
+        #FIXME: 결측값 처리
         volatility_20d = df['entry_volatility_20d'].fillna(25)
         # 적당한 변동성이 매수 신호
         vol_signal = np.where(
             volatility_20d < 15, 40,     # 너무 낮음
-            np.where(volatility_20d < 30, 85,     # 적정 (매수 기회!)
+            np.where(volatility_20d < 30, 85,     # 적정 (매수 기회)
                 np.where(volatility_20d < 50, 60, 20)))  # 너무 높음
         signals.append(vol_signal * 0.25)
         
@@ -281,10 +270,11 @@ class ImprovedHybridTradingAI:
         signals = []
         
         # 1. 밸류에이션 신호 (40%)
+        #FIXME: 결측값 처리
         pe_ratio = df['entry_pe_ratio'].fillna(20)
         # 낮은 PER이 매수 신호 (단, 너무 낮으면 문제)
         pe_signal = np.where(
-            pe_ratio < 5, 30,           # 너무 낮음 (문제?)
+            pe_ratio < 5, 30,           # 너무 낮음
             np.where(pe_ratio < 15, 85,      # 저평가 (매수!)
                 np.where(pe_ratio < 25, 60,      # 적정
                     np.where(pe_ratio < 40, 35, 15))))  # 고평가
@@ -292,6 +282,7 @@ class ImprovedHybridTradingAI:
         
         # 2. 품질 신호 (30%)
         roe = df['entry_roe'].fillna(10)
+        #FIXME: 결측값 처리
         # 높은 ROE가 매수 신호
         roe_signal = np.where(
             roe < 5, 30,               # 낮은 품질
@@ -301,6 +292,7 @@ class ImprovedHybridTradingAI:
         signals.append(roe_signal * 0.3)
         
         # 3. 성장성 신호 (30%)
+        #FIXME: 결측값 처리
         earnings_growth = df['entry_earnings_growth'].fillna(5)
         # 적당한 성장이 매수 신호
         growth_signal = np.where(
@@ -317,6 +309,7 @@ class ImprovedHybridTradingAI:
         signals = []
         
         # 1. VIX 신호 (40%)
+        #FIXME: 결측값 처리
         vix = df['entry_vix'].fillna(20)
         # 낮은 VIX가 매수 신호
         vix_signal = np.where(
@@ -327,6 +320,7 @@ class ImprovedHybridTradingAI:
         signals.append(vix_signal * 0.4)
         
         # 2. 금리 환경 신호 (30%)
+        #FIXME: 결측값 처리
         tnx_yield = df['entry_tnx_yield'].fillna(2.5)
         # 적정 금리가 매수 신호
         rate_signal = np.where(
@@ -335,7 +329,7 @@ class ImprovedHybridTradingAI:
                 np.where(tnx_yield < 5, 60, 30)))  # 높음, 너무 높음
         signals.append(rate_signal * 0.3)
         
-        # 3. 시장 추세 신호 (30%) - 실제 존재하는 피처 사용
+        # 3. 시장 추세 신호 (30%)
         market_return_20d = df.get('market_entry_cum_return_20d', pd.Series([0]*len(df))).fillna(0)
         # 적당한 상승 추세가 매수 신호  
         trend_signal = np.where(
@@ -348,10 +342,9 @@ class ImprovedHybridTradingAI:
         return np.sum(signals, axis=0)
     
     def prepare_b_type_features(self, df, verbose=False):
-        """B유형: 대폭 확장된 진입 조건 분석용 피처 준비 (진입 시점 정보만 사용)"""
+        """진입 조건 분석용 피처 """
         if verbose:
-            print("🔧 B유형: 대폭 확장된 진입 조건 분석용 피처 준비 중...")
-            print("   → 기술적 + 펀더멘털 + 시장환경 + 산업 정보 종합")
+            print("진입 조건 분석용 피처 준비")
         
         # ===== 1. 기본 기술적 지표 =====
         technical_features = [
@@ -383,15 +376,13 @@ class ImprovedHybridTradingAI:
         
         # ===== 3. 시장 환경 지표 =====
         market_environment_features = [
-            # VIX & 금리 (실제 존재)
+            # VIX & 금리
             'entry_vix', 'entry_tnx_yield',
             
-            # 시장 수익률 및 추세 (실제 존재)
+            # 시장 수익률 및 추세
             'market_entry_ma_return_5d', 'market_entry_ma_return_20d',
             'market_entry_cum_return_5d', 'market_entry_cum_return_20d',
             'market_entry_volatility_20d'
-            
-            # 고급 시장 컴포넌트들은 실제 데이터에 없어서 제외
         ]
         
         # ===== 4. 거래 관련 정보 =====
@@ -422,7 +413,7 @@ class ImprovedHybridTradingAI:
                     break
             if is_safe and feature in df.columns:
                 safe_features.append(feature)
-        
+
         # ===== 5. 범주형 피처는 일단 제외 (복잡성 때문) =====
         # categorical_features = self._encode_categorical_features(df)
         # safe_features.extend(categorical_features)
@@ -438,7 +429,7 @@ class ImprovedHybridTradingAI:
             print(f"    • 거래관련: {len([f for f in safe_features if 'position' in f])}개")
             print(f"  Data Leakage 방지: exit_, change_, holding_ 정보 완전 차단")
         
-        # 피처 데이터 반환 (숫자형 데이터만 - XGBoost 호환성)
+        # 피처 데이터 반환
         if self.b_type_entry_features:
             feature_data = df[self.b_type_entry_features].select_dtypes(include=[np.number])
             
@@ -448,44 +439,13 @@ class ImprovedHybridTradingAI:
             return feature_data
         else:
             return pd.DataFrame()
-    
-    def _encode_categorical_features(self, df):
-        """범주형 피처 인코딩"""
-        categorical_features = []
-        
-        # 산업 정보 원-핫 인코딩 (상위 N개 산업만)
-        if 'industry' in df.columns:
-            # 가장 많은 상위 10개 산업만 인코딩
-            top_industries = df['industry'].value_counts().head(10).index.tolist()
-            
-            for industry in top_industries:
-                feature_name = f'industry_{industry.replace(" ", "_").replace("&", "and").lower()}'
-                categorical_features.append(feature_name)
-        
-        return categorical_features
-    
-    def _get_categorical_data(self, df):
-        """범주형 데이터 생성"""
-        categorical_data = pd.DataFrame(index=df.index)
-        
-        # 산업 정보 원-핫 인코딩
-        if 'industry' in df.columns:
-            top_industries = df['industry'].value_counts().head(10).index.tolist()
-            
-            for industry in top_industries:
-                feature_name = f'industry_{industry.replace(" ", "_").replace("&", "and").lower()}'
-                categorical_data[feature_name] = (df['industry'] == industry).astype(int)
-        
-        return categorical_data
-    
+
     # ================================
-    # 대규모 하이퍼파라미터 튜닝 시스템
+    # 하이퍼파라미터 튜닝
     # ================================
     
     def get_massive_hyperparameter_grid(self, model_type='both'):
-        """대규모 하이퍼파라미터 그리드 생성"""
-        
-        # XGBoost 기본 하이퍼파라미터 (매우 광범위)
+        # XGBoost 기본 하이퍼파라미터
         xgb_param_grid = {
             # 트리 구조 파라미터
             'max_depth': [3, 4, 5, 6, 7, 8, 9, 10, 12, 15],
@@ -533,7 +493,7 @@ class ImprovedHybridTradingAI:
             a_param_grid = {**xgb_param_grid, **a_specific_params}
         
         if model_type == 'B' or model_type == 'both':
-            # B유형: 신호 예측 - 일반화 중시
+            # B유형: 신호 예측
             b_specific_params = {
                 'objective': ['reg:squarederror'],
                 'eval_metric': ['rmse'], 
@@ -830,7 +790,7 @@ class ImprovedHybridTradingAI:
         return self.global_results
     
     # ================================
-    # Walk-Forward Validation (v4와 동일)
+    # Walk-Forward Validation
     # ================================
     
     def create_time_folds(self, df, verbose=False):
@@ -877,8 +837,8 @@ class ImprovedHybridTradingAI:
         if verbose:
             print("🚀 개선된 하이브리드 트레이딩 AI v5 시작!")
             print("=" * 80)
-            print("📊 A유형: 거래 품질 분석 (v4 동일)")
-            print("🚀 B유형: 실제 수익률 기반 진입 조건 점수 (새로 설계)")
+            print("📊 A유형: 거래 품질 분석 ")
+            print("🚀 B유형: 실제 수익률 기반 진입 조건 점수 ")
             print("=" * 80)
         
         # 데이터 로드
@@ -1078,7 +1038,7 @@ class ImprovedHybridTradingAI:
                 if verbose:
                     print("\n  🚀 B유형: 개선된 진입 조건 분석 모델 훈련...")
                 
-                # B유형 라벨 생성 (새로 설계된 방식)
+                # B유형 라벨 생성
                 train_data_b = self.create_b_type_entry_score(train_data, verbose=False)
                 val_data_b = self.create_b_type_entry_score(val_data, verbose=False)
                 test_data_b = self.create_b_type_entry_score(test_data, verbose=False)
@@ -1315,30 +1275,7 @@ class ImprovedHybridTradingAI:
             b_r2_str = f"{b_r2:.4f}" if isinstance(b_r2, (int, float)) else "실패"
             
             print(f"  Fold {i+1}: {vix_level}/{return_trend} → A:{a_r2_str} / B:{b_r2_str}")
-        
-        print("="*80)
-        print("🎯 개선된 하이브리드 AI v5 핵심 특징:")
-        print("")
-        print("📊 A유형 (거래 품질 분석기):")
-        print("   • 목적: '이 거래가 얼마나 좋았나?' 객관적 평가")
-        print("   • 활용: 거래 복기, 성과 분석, 트레이더 평가")
-        print("   • 데이터: 모든 거래 정보 활용 (진입+진행+종료)")
-        print("   • 정확도: 높음 (완전한 정보 활용)")
-        print("")
-        print("🚀 B유형 (매수 신호 AI):")
-        print("   • 목적: '지금 매수하기 좋은 조건인가?' 실시간 판단")
-        print("   • 활용: 매수 타이밍, 종목 선별, 리스크 관리")
-        print("   • 데이터: 현재 시점 정보만 (미래 정보 완전 차단)")
-        print("   • 개선: 종합 매수 신호 점수화 (기술적+펀더멘털+시장환경)")
-        print("   • 피처: 50+ 개 다차원 분석 (기존 10개 → 대폭 확장)")
-        print("   • 현실성: 매우 높음 (실제 매수 신호 생성기)")
-        print("")
-        print("💡 v5 핵심 개선점:")
-        print("   • B유형: 수익률 예측 → 매수 신호 점수화")
-        print("   • B유형: 다차원 분석 (기술적+펀더멘털+시장환경+산업)")
-        print("   • B유형: 피처 10개 → 50+ 개로 대폭 확장") 
-        print("   • 실제 트레이딩에서 바로 사용 가능한 매수 신호 AI")
-        print("="*80)
+
     
     def save_results(self, verbose=True):
         """결과 저장"""
@@ -1722,9 +1659,5 @@ def main():
     print(f"   📁 Fold 결과: hybrid_results_v5_folds.json")
     print(f"   📁 전체 결과: hybrid_results_v5_global.json")
     print(f"   📁 비교 분석: hybrid_results_v5_comparison.json")
-    print(f"   📊 A유형 모델: 거래 품질 분석 완료")
-    print(f"   🚀 B유형 모델: 개선된 진입 조건 평가 완료")
-    print(f"   🎯 실용적이고 현실적인 트레이딩 지원 시스템 준비됨!")
-
 if __name__ == "__main__":
     main()
