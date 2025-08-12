@@ -12,10 +12,10 @@ import warnings
 warnings.filterwarnings('ignore')
 
 class SellSignalPredictor:
-    """매도  신호 예측 모델
-    - 타이밍 적절성 (40%): 보유 기간과 수익률의 효율성
-    - 수익 실현 품질 (35%): 손익 관리의 적절성  
-    - 시장 대응 (25%): 시장 상황 변화에 대한 대응력
+    """매도 신호 예측 모델 (return_pct 의존도 최소화)
+    - 기술적 매도 신호 (40%): Exit 시점 기술적 지표 기반 (RSI, 모멘텀, 52주 고점)
+    - 매도 타이밍 품질 (35%): 변동성, 보유기간, VIX, 시장상황 기반 타이밍
+    - 시장 환경 대응 (25%): 순수 시장지표 기반 환경 적응성
     """
 
     def __init__(self, train_months=36, val_months=6, test_months=6, step_months=3):
@@ -52,69 +52,111 @@ class SellSignalPredictor:
         df['change_volatility_5d'] = df['change_volatility_5d'].fillna(0)
         df['change_vix'] = df['change_vix'].fillna(0)
 
-        # 1. 타이밍 적절성 점수 (40%)
-        # 변동성 고려한 기간별 위험 조정
-        annual_vol = df['exit_volatility_20d']
-        period_vol = annual_vol * np.sqrt(df['holding_period_days'] / 365)
-        period_vol_safe = np.maximum(period_vol, 1)
+        # 1. 기술적 매도 신호 점수 (40%) - return_pct 최소 사용
+        # Exit 시점 기술적 지표들로만 구성
         
-        # 변동성 대비 수익률
-        df['vol_adjusted_efficiency'] = df['return_pct'] / period_vol_safe
-        
-        # 로그 변환
-        efficiency_scaled = df['vol_adjusted_efficiency'] * 5
-        df['timing_score_raw'] = np.sign(efficiency_scaled) * np.log1p(np.abs(efficiency_scaled))
-
-        #2. 수익 실현 품질 점수 (35%)
-        # 데이터 분포를 기반
-        return_std = df['return_pct'].std()
-        return_median = df['return_pct'].median()
-        
-        # 수익률 점수
-        df['return_score'] = np.tanh((df['return_pct'] - return_median) / return_std) * 3
-        
-        # 리스크 조정 수익률
-        volatility_safe = np.maximum(df['exit_volatility_20d'], 1)
-        risk_ratio = df['return_pct'] / volatility_safe
-        risk_std = risk_ratio.std()
-        risk_median = risk_ratio.median()
-        df['risk_adjusted_score'] = np.tanh((risk_ratio - risk_median) / risk_std) * 2
-        
-        # 보유기간 효율성
-        period_efficiency = df['return_pct'] / np.log1p(df['holding_period_days'])
-        efficiency_std = period_efficiency.std()
-        efficiency_median = period_efficiency.median()
-        df['period_efficiency_score'] = np.tanh((period_efficiency - efficiency_median) / efficiency_std) * 1
-        
-        # 최종 품질 점수 조합
-        df['profit_quality_raw'] = (df['return_score'] * 0.5 + 
-                                   df['risk_adjusted_score'] * 0.3 + 
-                                   df['period_efficiency_score'] * 0.2)
-
-        # 3. 시장 대응 점수 (25%) - 데이터 기반 상호작용
-        # 각 시장 지표를 데이터 기반으로 정규화
-        momentum_std = df['exit_momentum_20d'].std()
+        # RSI 대신 MA deviation 사용 (이평선 위에 많이 있으면 매도 신호)
+        ma_dev_5d_std = df['exit_ma_dev_5d'].std()
+        ma_dev_5d_median = df['exit_ma_dev_5d'].median()
+        ma_signal = np.tanh((df['exit_ma_dev_5d'] - ma_dev_5d_median) / ma_dev_5d_std)  # 이평선 위에 많이 있으면 매도
+            
+        # 모멘텀 약화 신호
+        momentum_std = df['exit_momentum_20d'].std()  
         momentum_median = df['exit_momentum_20d'].median()
-        df['momentum_normalized'] = (df['exit_momentum_20d'] - momentum_median) / momentum_std
+        momentum_signal = np.tanh(-(df['exit_momentum_20d'] - momentum_median) / momentum_std)  # 음수로 반전
         
+        # 52주 고점 대비 위치 (높을수록 매도 신호)
+        ratio_52w_std = df['exit_ratio_52w_high'].std()
+        ratio_52w_median = df['exit_ratio_52w_high'].median()
+        high_ratio_signal = np.tanh((df['exit_ratio_52w_high'] - ratio_52w_median) / ratio_52w_std)
+        
+        # 기술적 신호 조합 (RSI 대신 MA deviation 사용)
+        df['timing_score_raw'] = (ma_signal * 0.4 + momentum_signal * 0.4 + high_ratio_signal * 0.2)
+
+        # 2. 매도 타이밍 품질 점수 (35%) - return_pct 의존도 최소화
+        # Exit 시점의 시장 조건과 기술적 지표로만 구성
+        
+        # 변동성 정규화 신호 (높은 변동성에서 매도는 좋은 타이밍)
+        vol_std = df['exit_volatility_20d'].std()
+        vol_median = df['exit_volatility_20d'].median()
+        df['vol_timing_signal'] = np.tanh((df['exit_volatility_20d'] - vol_median) / vol_std) * 1.5
+        
+        # 보유기간 기반 타이밍 신호 (데이터 기반 최적 보유기간)
+        period_std = df['holding_period_days'].std()
+        period_median = df['holding_period_days'].median()
+        # 너무 짧거나 너무 긴 보유는 감점
+        period_deviation = np.abs(df['holding_period_days'] - period_median) / period_std
+        df['period_timing_signal'] = np.tanh(2 - period_deviation) * 1.0  # 최적 구간에서 높은 점수
+        
+        # VIX 기반 시장 불안 타이밍 (불안할 때 매도는 현명함)
+        if 'exit_vix' in df.columns:
+            vix_std = df['exit_vix'].std()
+            vix_median = df['exit_vix'].median()
+            df['vix_timing_signal'] = np.tanh((df['exit_vix'] - vix_median) / vix_std) * 1.2
+        else:
+            df['vix_timing_signal'] = 0
+        
+        # 시장 대비 상대적 타이밍 (시장 하락 시 매도는 방어적)
+        if 'market_return_during_holding' in df.columns:
+            market_std = df['market_return_during_holding'].std()
+            market_median = df['market_return_during_holding'].median()
+            # 시장이 안 좋을 때 매도는 현명한 선택
+            df['market_timing_signal'] = np.tanh(-(df['market_return_during_holding'] - market_median) / market_std) * 0.8
+        else:
+            df['market_timing_signal'] = 0
+        
+        # 타이밍 품질 점수 조합 (return_pct 제거)
+        df['profit_quality_raw'] = (df['vol_timing_signal'] * 0.4 + 
+                                   df['period_timing_signal'] * 0.3 + 
+                                   df['vix_timing_signal'] * 0.2 +
+                                   df['market_timing_signal'] * 0.1)
+
+        # 3. 시장 환경 대응 점수 (25%) - return_pct 완전 제거
+        # Exit 시점의 순수 시장 지표들만 사용
+        
+        # Exit 모멘텀 신호 (약한 모멘텀에서 매도는 현명함)
+        momentum_exit_std = df['exit_momentum_20d'].std()
+        momentum_exit_median = df['exit_momentum_20d'].median()
+        df['momentum_exit_signal'] = np.tanh(-(df['exit_momentum_20d'] - momentum_exit_median) / momentum_exit_std) * 1.5
+        
+        # VIX 변화 시그널 (VIX 급등 시 매도는 위험 회피)
         vix_change_std = df['change_vix'].std()
         vix_change_median = df['change_vix'].median()
-        df['vix_change_normalized'] = (df['change_vix'] - vix_change_median) / vix_change_std
+        df['vix_change_signal'] = np.tanh((df['change_vix'] - vix_change_median) / vix_change_std) * 1.2
         
+        # 변동성 변화 신호 (변동성 증가 시 매도는 리스크 관리)
         vol_change_std = df['change_volatility_5d'].std()
         vol_change_median = df['change_volatility_5d'].median()
-        df['vol_change_normalized'] = (df['change_volatility_5d'] - vol_change_median) / vol_change_std
+        df['vol_change_signal'] = np.tanh((df['change_volatility_5d'] - vol_change_median) / vol_change_std) * 1.0
         
-        # 수익률과 시장 지표의 상호작용을 연속함수로
-        df['momentum_interaction'] = np.tanh(df['momentum_normalized'] * np.sign(df['return_pct'])) * 1.5
-        df['vix_interaction'] = np.tanh(df['vix_change_normalized'] * np.tanh(df['return_pct'] / 5)) * 1.0
-        df['vol_interaction'] = np.tanh(df['vol_change_normalized'] * np.tanh(df['return_pct'] / 8)) * 0.8
+        # 금리 환경 신호 (금리 상승 시 매도 압력)
+        if 'change_tnx_yield' in df.columns:
+            rate_change_std = df['change_tnx_yield'].std()
+            rate_change_median = df['change_tnx_yield'].median()
+            df['rate_change_signal'] = np.tanh((df['change_tnx_yield'] - rate_change_median) / rate_change_std) * 0.8
+        else:
+            df['rate_change_signal'] = 0
         
-        # 시장 대응 점수 조합 (데이터가 알아서 패턴 찾게)
-        df['market_response_raw'] = (df['momentum_interaction'] * 0.5 + 
-                                    df['vix_interaction'] * 0.3 + 
-                                    df['vol_interaction'] * 0.2)
+        # 52주 고점 대비 위치 변화 (고점 근처에서 매도는 이익 실현)
+        if 'change_ratio_52w_high' in df.columns:
+            high_change_std = df['change_ratio_52w_high'].std()
+            high_change_median = df['change_ratio_52w_high'].median()
+            df['high_ratio_change_signal'] = np.tanh((df['change_ratio_52w_high'] - high_change_median) / high_change_std) * 0.5
+        else:
+            df['high_ratio_change_signal'] = 0
+        
+        # 시장 환경 대응 점수 조합 (완전히 시장 지표 기반)
+        df['market_response_raw'] = (df['momentum_exit_signal'] * 0.35 + 
+                                    df['vix_change_signal'] * 0.25 + 
+                                    df['vol_change_signal'] * 0.20 +
+                                    df['rate_change_signal'] * 0.15 +
+                                    df['high_ratio_change_signal'] * 0.05)
 
+        # NaN 처리 강화
+        df['timing_score_raw'] = df['timing_score_raw'].fillna(0)
+        df['profit_quality_raw'] = df['profit_quality_raw'].fillna(0) 
+        df['market_response_raw'] = df['market_response_raw'].fillna(0)
+        
         # 최종 점수 계산
         # 각 구성 요소별 스케일링
         if timing_scaler is None or profit_scaler is None or market_scaler is None:
@@ -134,10 +176,20 @@ class SellSignalPredictor:
             profit_scaled = profit_scaler.transform(df[['profit_quality_raw']])
             market_scaled = market_scaler.transform(df[['market_response_raw']])
         
-        # 가중 평균으로 최종 점수 계산
-        df['sell_signal_score'] = (timing_scaled.flatten() * 0.4 + 
-                                  profit_scaled.flatten() * 0.35 + 
-                                  market_scaled.flatten() * 0.25)
+        # 가중 평균으로 최종 점수 계산 (RobustScaler 결과를 0-100 스케일로 변환)
+        raw_score = (timing_scaled.flatten() * 0.4 + 
+                    profit_scaled.flatten() * 0.35 + 
+                    market_scaled.flatten() * 0.25)
+        
+        # RobustScaler 결과(-2~2 범위)를 0-100점으로 변환
+        # np.tanh로 -3~3을 -1~1로 압축 후 0-100으로 스케일링
+        df['sell_signal_score'] = (np.tanh(raw_score) + 1) * 50
+        
+        # 0-100 범위 보장
+        df['sell_signal_score'] = np.clip(df['sell_signal_score'], 0, 100)
+        
+        # 최종 NaN 체크
+        df['sell_signal_score'] = df['sell_signal_score'].fillna(0)
         
         if verbose:
             print(f"  매도 점수 생성 완료")
@@ -156,12 +208,11 @@ class SellSignalPredictor:
         excluded_features = {
             'return_pct', 'holding_period_days', 'exit_volatility_20d', 'exit_momentum_20d',
             'change_volatility_5d', 'change_vix',
-            # 중간 계산 변수들 (데이터 기반 변수명 반영)
-            'vol_adjusted_efficiency', 'timing_score_raw', 'return_score', 
-            'risk_adjusted_score', 'period_efficiency_score', 'profit_quality_raw',
-            'momentum_normalized', 'vix_change_normalized', 'vol_change_normalized',
-            'momentum_interaction', 'vix_interaction', 'vol_interaction',
-            'market_response_raw', 'sell_signal_score'
+            # 중간 계산 변수들 (업데이트된 변수명 반영)
+            'timing_score_raw', 'vol_timing_signal', 'period_timing_signal', 'vix_timing_signal',
+            'market_timing_signal', 'profit_quality_raw', 'momentum_exit_signal', 
+            'vix_change_signal', 'vol_change_signal', 'rate_change_signal', 
+            'high_ratio_change_signal', 'market_response_raw', 'sell_signal_score'
         }
         
 
@@ -226,8 +277,25 @@ class SellSignalPredictor:
         if verbose:
             print("매도 신호 모델 훈련 시작")
         
+        # 펀더멘털 데이터가 있는 것만 필터링 (강화된 버전)
+        df_filtered = df[
+            df['entry_pe_ratio'].notna() & 
+            df['entry_roe'].notna() & 
+            df['entry_earnings_growth'].notna() &
+            df['return_pct'].notna() &
+            df['holding_period_days'].notna() &
+            df['exit_volatility_20d'].notna() &
+            df['exit_momentum_20d'].notna() &
+            df['change_volatility_5d'].notna() &
+            df['change_vix'].notna()
+        ].copy()
+        
+        if verbose:
+            filter_ratio = len(df_filtered) / len(df) * 100
+            print(f"펀더멘털 데이터 필터링: {len(df_filtered):,}개 ({filter_ratio:.1f}%)")
+        
         #  신호 점수 생성
-        df_with_score = self.create_exit_signal_score(df, verbose=verbose)
+        df_with_score = self.create_exit_signal_score(df_filtered, verbose=verbose)
         
         # 피처 준비
         X = self.prepare_features(df_with_score, verbose=verbose)
@@ -618,14 +686,29 @@ def main():
         df = pd.read_csv(data_path)
         print(f"\n📊 데이터 로드: {len(df):,}개 거래")
         
+        # 펀더멘털 데이터가 있는 것만 필터링 (강화된 버전)
+        df_filtered = df[
+            df['entry_pe_ratio'].notna() & 
+            df['entry_roe'].notna() & 
+            df['entry_earnings_growth'].notna() &
+            df['return_pct'].notna() &
+            df['holding_period_days'].notna() &
+            df['exit_volatility_20d'].notna() &
+            df['exit_momentum_20d'].notna() &
+            df['change_volatility_5d'].notna() &
+            df['change_vix'].notna()
+        ].copy()
+        
+        print(f"펀더멘털 데이터 필터링: {len(df_filtered):,}개 ({len(df_filtered)/len(df)*100:.1f}%)")
+        
         # Train/Val/Test 분할 (60/20/20)
-        train_val_df, test_df = train_test_split(df, test_size=0.2, random_state=42)
+        train_val_df, test_df = train_test_split(df_filtered, test_size=0.2, random_state=42)
         train_df, val_df = train_test_split(train_val_df, test_size=0.25, random_state=42)  # 0.25 * 0.8 = 0.2
         
         print(f"\n📊 데이터 분할:")
-        print(f"  Train: {len(train_df):,}개 ({len(train_df)/len(df)*100:.1f}%)")
-        print(f"  Val:   {len(val_df):,}개 ({len(val_df)/len(df)*100:.1f}%)")
-        print(f"  Test:  {len(test_df):,}개 ({len(test_df)/len(df)*100:.1f}%)")
+        print(f"  Train: {len(train_df):,}개 ({len(train_df)/len(df_filtered)*100:.1f}%)")
+        print(f"  Val:   {len(val_df):,}개 ({len(val_df)/len(df_filtered)*100:.1f}%)")
+        print(f"  Test:  {len(test_df):,}개 ({len(test_df)/len(df_filtered)*100:.1f}%)")
         
         # 모델 학습
         print(f"\n 모델 학습 시작...")

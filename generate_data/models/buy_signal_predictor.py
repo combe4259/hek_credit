@@ -669,27 +669,72 @@ def main():
         
         print(f"펀더멘털 데이터 필터링: {len(df_filtered):,}개 ({len(df_filtered)/len(df)*100:.1f}%)")
         
-        # 학습/테스트 분리
+        # Train/Val/Test 분할 (60/20/20)
         from sklearn.model_selection import train_test_split
-        train_df, test_df = train_test_split(df_filtered, test_size=0.2, random_state=42)
+        train_val_df, test_df = train_test_split(df_filtered, test_size=0.2, random_state=42)
+        train_df, val_df = train_test_split(train_val_df, test_size=0.25, random_state=42)  # 0.25 * 0.8 = 0.2
         
-        print(f"  학습 데이터: {len(train_df):,}개")
-        print(f"  테스트 데이터: {len(test_df):,}개")
+        print(f"\n📊 데이터 분할:")
+        print(f"  Train: {len(train_df):,}개 ({len(train_df)/len(df_filtered)*100:.1f}%)")
+        print(f"  Val:   {len(val_df):,}개 ({len(val_df)/len(df_filtered)*100:.1f}%)")
+        print(f"  Test:  {len(test_df):,}개 ({len(test_df)/len(df_filtered)*100:.1f}%)")
         
         # 모델 학습
+        print(f"\n🚀 모델 학습 시작...")
         result = predictor.train_model(train_df, hyperparameter_search=False, verbose=True)
         
-        # 테스트 데이터로 평가
-        from sklearn.metrics import r2_score
-        test_df_with_score = predictor.create_entry_signal_score(test_df, verbose=False)
-        X_test = predictor.prepare_features(test_df_with_score, verbose=False)
-        y_test = test_df_with_score['buy_signal_score']
-        y_pred = predictor.model.predict(X_test)
-        test_r2 = r2_score(y_test, y_pred)
+        # 평가 함수
+        def evaluate_model(predictor, data, name):
+            from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
+            import numpy as np
+            data_with_score = predictor.create_entry_signal_score(data, verbose=False)
+            X = predictor.prepare_features(data_with_score, verbose=False)
+            y = data_with_score['buy_signal_score']
+            y_pred = predictor.model.predict(X)
+            
+            r2 = r2_score(y, y_pred)
+            rmse = np.sqrt(mean_squared_error(y, y_pred))
+            mae = mean_absolute_error(y, y_pred)
+            
+            return {
+                'name': name,
+                'r2': r2,
+                'rmse': rmse,
+                'mae': mae,
+                'y_mean': y.mean(),
+                'y_std': y.std(),
+                'pred_mean': y_pred.mean(),
+                'pred_std': y_pred.std()
+            }
         
-        print(f"\n 성능 평가:")
-        print(f"  Train R²: {result['r2_score']:.4f}")
-        print(f"  Test R²: {test_r2:.4f}")
+        # 각 세트 평가
+        train_metrics = evaluate_model(predictor, train_df, 'Train')
+        val_metrics = evaluate_model(predictor, val_df, 'Val')
+        test_metrics = evaluate_model(predictor, test_df, 'Test')
+        
+        # 성과 출력
+        print(f"\n📊 성과 지표:")
+        print("="*60)
+        print(f"{'Dataset':<10} {'R²':>8} {'RMSE':>8} {'MAE':>8} {'Mean':>8} {'Std':>8}")
+        print("-"*60)
+        for metrics in [train_metrics, val_metrics, test_metrics]:
+            print(f"{metrics['name']:<10} {metrics['r2']:>8.4f} {metrics['rmse']:>8.4f} {metrics['mae']:>8.4f} {metrics['y_mean']:>8.4f} {metrics['y_std']:>8.4f}")
+        
+        # 오버피팅 체크
+        overfit_score = train_metrics['r2'] - val_metrics['r2']
+        print(f"\n🔍 오버피팅 분석:")
+        if overfit_score > 0.05:
+            print(f"   ⚠️ 오버피팅 가능성: Train-Val R² 차이 = {overfit_score:.4f}")
+        else:
+            print(f"   ✅ 오버피팅 없음: Train-Val R² 차이 = {overfit_score:.4f}")
+        
+        # Val-Test 성능 안정성
+        stability_score = abs(val_metrics['r2'] - test_metrics['r2'])
+        print(f"\n📏 성능 안정성:")
+        if stability_score < 0.05:
+            print(f"   ✅ 안정적: Val-Test R² 차이 = {stability_score:.4f}")
+        else:
+            print(f"   ⚠️ 불안정: Val-Test R² 차이 = {stability_score:.4f}")
         
         # 모델 저장
         model_filename = predictor.save_model()
