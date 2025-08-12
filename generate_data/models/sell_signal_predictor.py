@@ -12,62 +12,38 @@ import warnings
 warnings.filterwarnings('ignore')
 
 class SellSignalPredictor:
-    """
-    C-type: 매도 청산 신호 예측 모델
-    
-    목표: 보유 중인 종목의 매도 시점 적절성을 평가
+    """매도  신호 예측 모델
     - 타이밍 적절성 (40%): 보유 기간과 수익률의 효율성
     - 수익 실현 품질 (35%): 손익 관리의 적절성  
     - 시장 대응 (25%): 시장 상황 변화에 대한 대응력
-    
-    실서비스 활용:
-    - 실시간 매도 신호 강도 계산
-    - 청산 타이밍 최적화
-    - 포트폴리오 리스크 관리
     """
 
     def __init__(self, train_months=36, val_months=6, test_months=6, step_months=3):
-        # 모델 관련
         self.model = None
         self.sell_signal_scalers = {}
         self.features = None
         self.is_trained = False
-        
-        # Walk-Forward 설정
+
         self.train_months = train_months
         self.val_months = val_months  
         self.test_months = test_months
         self.step_months = step_months
-        
-        # 학습 결과 저장
+
         self.fold_results = []
         self.best_params = None
         
     def create_exit_signal_score(self, df, timing_scaler=None, profit_scaler=None, market_scaler=None, verbose=False):
-        """
-        C-type: 청산 신호 점수 생성
-        
-        Args:
-            df: 현재 보유 중인 포지션 데이터
-            timing_scaler: 타이밍 점수 스케일러 (None이면 새로 생성)
-            profit_scaler: 수익 품질 점수 스케일러 (None이면 새로 생성)
-            market_scaler: 시장 대응 점수 스케일러 (None이면 새로 생성)
-            verbose: 로그 출력 여부
-            
-        Returns:
-            청산 신호 점수가 추가된 DataFrame
-        """
+        """매도 신호 점수 생성"""
         if verbose:
-            print("🛑 C-type: 청산 신호 점수 생성 중...")
+            print("매도 신호 점수 생성 중")
 
         df = df.copy()
-        
-        # 필수 컬럼 확인 및 NaN 처리
+
         required_columns = ['return_pct', 'holding_period_days', 'exit_volatility_20d', 
                           'exit_momentum_20d', 'change_volatility_5d', 'change_vix']
         missing_columns = [col for col in required_columns if col not in df.columns]
         if missing_columns:
-            raise ValueError(f"필수 컬럼이 없습니다: {missing_columns}")
+            raise ValueError(f"컬럼이 없음: {missing_columns}")
         
         df['return_pct'] = df['return_pct'].fillna(0)
         df['holding_period_days'] = df['holding_period_days'].fillna(1)
@@ -76,89 +52,70 @@ class SellSignalPredictor:
         df['change_volatility_5d'] = df['change_volatility_5d'].fillna(0)
         df['change_vix'] = df['change_vix'].fillna(0)
 
-        # ===== 1. 타이밍 적절성 점수 (40%) =====
-        # 보유 기간 대비 수익률 효율성
-        holding_safe = np.maximum(df['holding_period_days'], 1)
-        df['daily_return_efficiency'] = df['return_pct'] / holding_safe
+        # 1. 타이밍 적절성 점수 (40%)
+        # 변동성 고려한 기간별 위험 조정
+        annual_vol = df['exit_volatility_20d']
+        period_vol = annual_vol * np.sqrt(df['holding_period_days'] / 365)
+        period_vol_safe = np.maximum(period_vol, 1)
         
-        # 보유 기간별 적절성 평가
-        df['holding_timing_base'] = np.where(
-            df['holding_period_days'] < 3, -2,     # 너무 빠른 청산: 매우 나쁨
-            np.where(df['holding_period_days'] < 7, 1,      # 단기 청산: 보통
-                    np.where(df['holding_period_days'] < 21, 3,     # 적정 보유: 좋음
-                            np.where(df['holding_period_days'] < 60, 2,     # 중장기: 보통
-                                    np.where(df['holding_period_days'] < 120, 0, -1)))))  # 장기: 감점
+        # 변동성 대비 수익률
+        df['vol_adjusted_efficiency'] = df['return_pct'] / period_vol_safe
         
-        # 수익률에 따른 타이밍 보정
-        df['return_timing_adjustment'] = np.where(
-            df['return_pct'] > 10, 1.5,    # 큰 수익: 타이밍 보너스
-            np.where(df['return_pct'] > 5, 1.2,     # 중간 수익: 약간 보너스
-                    np.where(df['return_pct'] > 0, 1.0,     # 소수익: 그대로
-                            np.where(df['return_pct'] > -5, 0.8,    # 소손실: 약간 감점
-                                    np.where(df['return_pct'] > -15, 0.6, 0.3)))))  # 큰 손실: 큰 감점
-        
-        df['timing_score_raw'] = df['holding_timing_base'] * df['return_timing_adjustment']
+        # 로그 변환
+        efficiency_scaled = df['vol_adjusted_efficiency'] * 5
+        df['timing_score_raw'] = np.sign(efficiency_scaled) * np.log1p(np.abs(efficiency_scaled))
 
-        # ===== 2. 수익 실현 품질 점수 (35%) =====
-        # 절대 수익률 평가
-        df['absolute_return_score'] = np.where(
-            df['return_pct'] > 15, 5,      # 큰 수익: 매우 좋음
-            np.where(df['return_pct'] > 8, 4,       # 좋은 수익: 좋음
-                    np.where(df['return_pct'] > 3, 3,       # 적당한 수익: 보통
-                            np.where(df['return_pct'] > 0, 1,       # 소수익: 약간 좋음
-                                    np.where(df['return_pct'] > -3, -1,     # 소손실: 약간 나쁨
-                                            np.where(df['return_pct'] > -8, -2,     # 손실: 나쁨
-                                                    np.where(df['return_pct'] > -15, -3, -4)))))))  # 큰 손실: 매우 나쁨
+        #2. 수익 실현 품질 점수 (35%)
+        # 데이터 분포를 기반
+        return_std = df['return_pct'].std()
+        return_median = df['return_pct'].median()
         
-        # 리스크 대비 수익률 (샤프 비율 개념)
+        # 수익률 점수
+        df['return_score'] = np.tanh((df['return_pct'] - return_median) / return_std) * 3
+        
+        # 리스크 조정 수익률
         volatility_safe = np.maximum(df['exit_volatility_20d'], 1)
-        df['risk_adjusted_return'] = df['return_pct'] / volatility_safe
-        df['risk_adjusted_score'] = np.clip(df['risk_adjusted_return'] * 2, -3, 3)
+        risk_ratio = df['return_pct'] / volatility_safe
+        risk_std = risk_ratio.std()
+        risk_median = risk_ratio.median()
+        df['risk_adjusted_score'] = np.tanh((risk_ratio - risk_median) / risk_std) * 2
         
-        # 손절/익절 적절성
-        df['cutloss_profit_score'] = np.where(
-            (df['return_pct'] > 0) & (df['holding_period_days'] < 30), 2,    # 빠른 익절: 좋음
-            np.where((df['return_pct'] < -5) & (df['holding_period_days'] < 10), 1,  # 빠른 손절: 보통
-                    np.where((df['return_pct'] < -10) & (df['holding_period_days'] > 30), -2, 0))  # 늦은 손절: 나쁨
-        )
+        # 보유기간 효율성
+        period_efficiency = df['return_pct'] / np.log1p(df['holding_period_days'])
+        efficiency_std = period_efficiency.std()
+        efficiency_median = period_efficiency.median()
+        df['period_efficiency_score'] = np.tanh((period_efficiency - efficiency_median) / efficiency_std) * 1
         
-        df['profit_quality_raw'] = (df['absolute_return_score'] * 0.5 + 
+        # 최종 품질 점수 조합
+        df['profit_quality_raw'] = (df['return_score'] * 0.5 + 
                                    df['risk_adjusted_score'] * 0.3 + 
-                                   df['cutloss_profit_score'] * 0.2)
+                                   df['period_efficiency_score'] * 0.2)
 
-        # ===== 3. 시장 대응 점수 (25%) =====
-        # 청산 시점의 모멘텀 대응
-        df['exit_momentum_response'] = np.where(
-            df['return_pct'] > 0,  # 수익 실현 시
-            np.where(df['exit_momentum_20d'] < -5, 3,    # 하락장에서 수익실현: 매우 좋음
-                    np.where(df['exit_momentum_20d'] > 5, -1, 1)),   # 상승장에서 수익실현: 아쉬움
-            # 손실 청산 시
-            np.where(df['exit_momentum_20d'] < -10, 2,   # 급락장에서 손절: 좋은 판단
-                    np.where(df['exit_momentum_20d'] > 0, -2, 0))    # 상승장에서 손절: 나쁜 판단
-        )
+        # 3. 시장 대응 점수 (25%) - 데이터 기반 상호작용
+        # 각 시장 지표를 데이터 기반으로 정규화
+        momentum_std = df['exit_momentum_20d'].std()
+        momentum_median = df['exit_momentum_20d'].median()
+        df['momentum_normalized'] = (df['exit_momentum_20d'] - momentum_median) / momentum_std
         
-        # VIX 변화 대응 (공포지수 변화에 따른 대응)
-        df['vix_change_response'] = np.where(
-            df['change_vix'] > 5,  # VIX 급등 (공포 증가) 시
-            np.where(df['return_pct'] > 0, 2,   # 수익 실현: 좋은 대응
-                    np.where(df['return_pct'] > -5, 1, 0)),  # 소손실도 나쁘지 않음
-            np.where(df['change_vix'] < -3,  # VIX 하락 (안정) 시
-                    np.where(df['return_pct'] < 0, -1, 0), 0)    # 안정기 손실: 아쉬움
-        )
+        vix_change_std = df['change_vix'].std()
+        vix_change_median = df['change_vix'].median()
+        df['vix_change_normalized'] = (df['change_vix'] - vix_change_median) / vix_change_std
         
-        # 변동성 변화 대응
-        df['volatility_change_response'] = np.where(
-            df['change_volatility_5d'] > 15,  # 변동성 급증 시
-            np.where(df['return_pct'] > 0, 2, 1),     # 수익실현 좋음, 손절도 나쁘지 않음
-            np.where(df['change_volatility_5d'] < -10,  # 변동성 감소 시
-                    np.where(df['return_pct'] < -5, -1, 0), 0)  # 안정기 손실: 아쉬움
-        )
+        vol_change_std = df['change_volatility_5d'].std()
+        vol_change_median = df['change_volatility_5d'].median()
+        df['vol_change_normalized'] = (df['change_volatility_5d'] - vol_change_median) / vol_change_std
         
-        df['market_response_raw'] = (df['exit_momentum_response'] * 0.5 + 
-                                    df['vix_change_response'] * 0.3 + 
-                                    df['volatility_change_response'] * 0.2)
+        # 수익률과 시장 지표의 상호작용을 연속함수로
+        df['momentum_interaction'] = np.tanh(df['momentum_normalized'] * np.sign(df['return_pct'])) * 1.5
+        df['vix_interaction'] = np.tanh(df['vix_change_normalized'] * np.tanh(df['return_pct'] / 5)) * 1.0
+        df['vol_interaction'] = np.tanh(df['vol_change_normalized'] * np.tanh(df['return_pct'] / 8)) * 0.8
+        
+        # 시장 대응 점수 조합 (데이터가 알아서 패턴 찾게)
+        df['market_response_raw'] = (df['momentum_interaction'] * 0.5 + 
+                                    df['vix_interaction'] * 0.3 + 
+                                    df['vol_interaction'] * 0.2)
 
-        # ===== 최종 점수 계산 (스케일링 적용) =====
+        # 최종 점수 계산
         # 각 구성 요소별 스케일링
         if timing_scaler is None or profit_scaler is None or market_scaler is None:
             timing_scaler = RobustScaler()
@@ -183,91 +140,80 @@ class SellSignalPredictor:
                                   market_scaled.flatten() * 0.25)
         
         if verbose:
-            print(f"  ✅ C-type 청산 점수 생성 완료")
+            print(f"  매도 점수 생성 완료")
             print(f"  범위: {df['sell_signal_score'].min():.4f} ~ {df['sell_signal_score'].max():.4f}")
             print(f"  평균: {df['sell_signal_score'].mean():.4f}")
-            print(f"  구성: 타이밍 적절성(40%) + 수익 실현 품질(35%) + 시장 대응(25%)")
+
         
         return df
 
     def prepare_features(self, df, verbose=False):
-        """
-        C-type: 청산 시점에서 사용 가능한 피처 준비
-        
-        청산 시점에서 알 수 있는 정보:
-        - 진입 시점 정보 (entry_*): 참고 정보
-        - 현재(청산) 시점 정보 (exit_*): 핵심 정보
-        - 보유 기간 중 변화 (change_*): 핵심 정보
-        - 시장 정보 (market_*): 환경 정보
-        """
+        """ 피처 준비"""
         if verbose:
-            print("🛑 C-type: 청산 판단용 피처 준비")
+            print("매도 피처 준비")
         
-        # 라벨링에 사용된 피처들 제외
+
         excluded_features = {
             'return_pct', 'holding_period_days', 'exit_volatility_20d', 'exit_momentum_20d',
             'change_volatility_5d', 'change_vix',
-            # 중간 계산 변수들
-            'daily_return_efficiency', 'holding_timing_base', 'return_timing_adjustment',
-            'timing_score_raw', 'absolute_return_score', 'risk_adjusted_return', 'risk_adjusted_score',
-            'cutloss_profit_score', 'profit_quality_raw', 'exit_momentum_response',
-            'vix_change_response', 'volatility_change_response', 'market_response_raw',
-            'sell_signal_score'
+            # 중간 계산 변수들 (데이터 기반 변수명 반영)
+            'vol_adjusted_efficiency', 'timing_score_raw', 'return_score', 
+            'risk_adjusted_score', 'period_efficiency_score', 'profit_quality_raw',
+            'momentum_normalized', 'vix_change_normalized', 'vol_change_normalized',
+            'momentum_interaction', 'vix_interaction', 'vol_interaction',
+            'market_response_raw', 'sell_signal_score'
         }
         
-        # C타입에서 사용 가능한 피처들
+
         available_features = []
         
-        # ===== 1. 기본 거래 정보 =====
+        # 1. 기본 거래 정보
         basic_features = ['position_size_pct']
         available_features.extend([col for col in basic_features if col in df.columns])
         
-        # ===== 2. 진입 시점 정보 (참고용) =====
+
         entry_features = [
             'entry_momentum_5d', 'entry_momentum_20d', 'entry_momentum_60d',
             'entry_ma_dev_5d', 'entry_ma_dev_20d', 'entry_ma_dev_60d',
-            'entry_volatility_5d', 'entry_volatility_60d',  # entry_volatility_20d 제외
+            'entry_volatility_5d', 'entry_volatility_60d',
             'entry_vol_change_5d', 'entry_vol_change_20d', 'entry_vol_change_60d',
             'entry_vix', 'entry_tnx_yield', 'entry_ratio_52w_high'
         ]
         available_features.extend([col for col in entry_features if col in df.columns])
         
-        # ===== 3. 청산 시점 정보 (핵심) =====
+        # 3.  시점 정보
         exit_features = [
-            'exit_momentum_5d', 'exit_momentum_60d',  # exit_momentum_20d 제외 (라벨링 사용)
+            'exit_momentum_5d', 'exit_momentum_60d',
             'exit_ma_dev_5d', 'exit_ma_dev_20d', 'exit_ma_dev_60d',
-            'exit_volatility_5d', 'exit_volatility_60d',  # exit_volatility_20d 제외
+            'exit_volatility_5d', 'exit_volatility_60d',
             'exit_vix', 'exit_tnx_yield', 'exit_ratio_52w_high'
         ]
         available_features.extend([col for col in exit_features if col in df.columns])
         
-        # ===== 4. 보유 기간 중 변화 (매우 중요) =====
+        # 4. 보유 기간 중 변화
         change_features = [
             'change_momentum_5d', 'change_momentum_20d', 'change_momentum_60d',
             'change_ma_dev_5d', 'change_ma_dev_20d', 'change_ma_dev_60d',
             'change_volatility_20d', 'change_volatility_60d',  # change_volatility_5d 제외
             'change_tnx_yield', 'change_ratio_52w_high'
-            # change_vix는 라벨링에 사용되므로 제외
+
         ]
         available_features.extend([col for col in change_features if col in df.columns])
         
-        # ===== 5. 시장 환경 정보 =====
+        # 5. 시장 환경 정보
         market_features = [
             'market_return_during_holding',
             'excess_return'
         ]
         available_features.extend([col for col in market_features if col in df.columns])
         
-        # 실제 존재하고 제외되지 않은 피처만 선택
+
         self.features = [col for col in available_features 
                         if col in df.columns and col not in excluded_features]
         
         if verbose:
-            print(f"  C-type 사용 피처: {len(self.features)}개")
-            print(f"  구성: 진입 정보(참고) + 청산 정보(핵심) + 변화 정보(중요) + 시장 정보")
-            print(f"  제외된 피처: 라벨링에 사용된 변수들 및 중간 계산 변수들")
-        
-        # 숫자형 데이터만 선택
+            print(f"  매도 사용 피처: {len(self.features)}개")
+
         feature_data = df[self.features].select_dtypes(include=[np.number])
         
         if verbose and len(feature_data.columns) != len(self.features):
@@ -276,21 +222,11 @@ class SellSignalPredictor:
         return feature_data
 
     def train_model(self, df, hyperparameter_search=False, verbose=False):
-        """
-        C-type 청산 신호 예측 모델 훈련
-        
-        Args:
-            df: 훈련용 데이터 (과거 청산 시점 + 실제 성과)
-            hyperparameter_search: 하이퍼파라미터 최적화 수행 여부
-            verbose: 로그 출력 여부
-            
-        Returns:
-            훈련된 모델과 성능 메트릭
-        """
+        """매도  신호 예측 모델 훈련"""
         if verbose:
-            print("🛑 C-type 청산 신호 모델 훈련 시작")
+            print("매도 신호 모델 훈련 시작")
         
-        # 청산 신호 점수 생성
+        #  신호 점수 생성
         df_with_score = self.create_exit_signal_score(df, verbose=verbose)
         
         # 피처 준비
@@ -301,7 +237,7 @@ class SellSignalPredictor:
         if hyperparameter_search:
             best_params = self._optimize_hyperparameters(X, y, verbose=verbose)
         else:
-            # 기본 파라미터 (C-type 특화 - 청산 신호 예측)
+            # 기본 파라미터
             best_params = {
                 'max_depth': 7,
                 'learning_rate': 0.05,
@@ -325,7 +261,7 @@ class SellSignalPredictor:
         self.is_trained = True
         
         if verbose:
-            print(f"  ✅ C-type 모델 훈련 완료")
+            print(f"  매도 신호 예측 모델 훈련 완료")
             print(f"  R² Score: {r2:.4f}")
             print(f"  RMSE: {rmse:.4f}")
         
@@ -338,21 +274,12 @@ class SellSignalPredictor:
         }
 
     def predict_exit_signal(self, df, verbose=False):
-        """
-        청산 신호 강도 예측 (실서비스용)
-        
-        Args:
-            df: 예측할 보유 포지션 데이터
-            verbose: 로그 출력 여부
-            
-        Returns:
-            청산 신호 점수 (표준화된 값)
-        """
+        """신호 강도 예측 """
         if not self.is_trained:
-            raise ValueError("모델이 훈련되지 않았습니다. train_model()을 먼저 실행하세요.")
+            raise ValueError("모델이 훈련되지 않음.")
         
         if verbose:
-            print("🛑 C-type: 청산 신호 강도 예측")
+            print("매도 신호 예측")
         
         # 피처 준비
         X = self.prepare_features(df, verbose=False)
@@ -361,22 +288,14 @@ class SellSignalPredictor:
         predictions = self.model.predict(X)
         
         if verbose:
-            print(f"  ✅ {len(predictions)}개 포지션의 청산 신호 예측 완료")
+            print(f"  {len(predictions)}개 포지션의  신호 예측 완료")
             print(f"  신호 강도 범위: {predictions.min():.4f} ~ {predictions.max():.4f}")
             print(f"  평균 신호 강도: {predictions.mean():.4f}")
         
         return predictions
 
     def get_signal_interpretation(self, score):
-        """
-        청산 신호 점수 해석
-        
-        Args:
-            score: 청산 신호 점수 (표준화된 값)
-            
-        Returns:
-            신호 강도 해석
-        """
+        """신호 점수 해석"""
         if score > 2:
             return "즉시 매도 권장"
         elif score > 1:
@@ -403,13 +322,18 @@ class SellSignalPredictor:
             'reg_lambda': [3.0, 5.0, 8.0]
         }
         
-        base_model = xgb.XGBRegressor(random_state=42)
+
+        base_model = xgb.XGBRegressor(
+            random_state=42,
+            tree_method='gpu_hist',
+            gpu_id=0
+        )
         tscv = TimeSeriesSplit(n_splits=3)
-        
-        search = RandomizedSearchCV(
+
+        search = GridSearchCV(
             base_model, param_grid, 
-            n_iter=50, cv=tscv, scoring='r2',
-            random_state=42, n_jobs=-1
+            cv=tscv, scoring='r2',
+            verbose=1
         )
         search.fit(X, y)
         
@@ -435,7 +359,7 @@ class SellSignalPredictor:
         }
         
         joblib.dump(save_data, filename)
-        print(f"💾 Sell Signal 모델 저장: {filename}")
+        print(f" Sell Signal 모델 저장: {filename}")
         return filename
 
     def load_model(self, filename):
@@ -455,9 +379,8 @@ class SellSignalPredictor:
     # ================================
     
     def create_time_folds(self, df, verbose=False):
-        """시계열 데이터를 위한 Walk-Forward 폴드 생성"""
         if verbose:
-            print("🛑 Sell Signal Walk-Forward 시간 폴드 생성")
+            print("Sell Signal Walk-Forward 시간 폴드 생성")
         
         df = df.copy()
         df['date'] = pd.to_datetime(df['exit_date'])
@@ -506,15 +429,15 @@ class SellSignalPredictor:
         return folds
     
     def run_walk_forward_training(self, data_path, hyperparameter_search=True, verbose=True):
-        """Sell Signal Walk-Forward 학습 및 평가"""
+
         if verbose:
-            print("🛑 Sell Signal Walk-Forward 학습 시작")
+            print("Sell Signal Walk-Forward 학습 시작")
             print("="*60)
         
         # 데이터 로드
         df = pd.read_csv(data_path)
         if verbose:
-            print(f"📊 데이터 로드: {len(df):,}개 거래")
+            print(f"데이터 로드: {len(df):,}개 거래")
         
         # Sell Signal 점수 생성
         df = self.create_exit_signal_score(df, verbose=verbose)
@@ -526,7 +449,7 @@ class SellSignalPredictor:
         
         for fold_info in tqdm(folds, desc="폴드별 학습"):
             if verbose:
-                print(f"\n🛑 폴드 {fold_info['fold_id']} 학습 중...")
+                print(f"\n 폴드 {fold_info['fold_id']} 학습 중")
             
             # 폴드별 데이터 분할
             train_data = df.loc[fold_info['train_indices']]
@@ -541,15 +464,14 @@ class SellSignalPredictor:
             y_train = train_data['sell_signal_score']
             y_val = val_data['sell_signal_score']
             y_test = test_data['sell_signal_score']
-            
-            # 하이퍼파라미터 최적화 또는 v6에서 최적화된 파라미터 사용
+
             if hyperparameter_search:
                 search_result = self._optimize_hyperparameters(X_train, y_train, verbose=False)
                 best_params = search_result
             else:
-                # v6에서 미리 최적화된 파라미터 사용
+
                 best_params = {
-                    'tree_method': 'hist',  # GPU 메모리 부족 방지로 approx->hist 변경
+                    'tree_method': 'hist',
                     'subsample': 0.75, 
                     'scale_pos_weight': 10, 
                     'reg_lambda': 20.0, 
@@ -618,21 +540,21 @@ class SellSignalPredictor:
     def _print_fold_summary(self):
         """폴드별 결과 요약 출력"""
         if not self.fold_results:
-            print("❌ 폴드 결과가 없습니다.")
+            print("폴드 결과가 없습니다.")
             return
         
         print("\n" + "="*70)
-        print("🏆 Sell Signal Walk-Forward 결과 요약")
+        print("Sell Signal Walk-Forward 결과 요약")
         print("="*70)
         
         val_r2_scores = [result['val_r2'] for result in self.fold_results]
         test_r2_scores = [result['test_r2'] for result in self.fold_results]
         
-        print(f"📊 폴드별 성능:")
+        print(f" 폴드별 성능:")
         for result in self.fold_results:
             print(f"  폴드 {result['fold_id']}: Val R² = {result['val_r2']:.4f}, Test R² = {result['test_r2']:.4f}")
         
-        print(f"\n📈 전체 통계:")
+        print(f"\n 전체 통계:")
         print(f"  Validation R²: {np.mean(val_r2_scores):.4f} ± {np.std(val_r2_scores):.4f}")
         print(f"  Test R²:       {np.mean(test_r2_scores):.4f} ± {np.std(test_r2_scores):.4f}")
         print(f"  최고 성능:     {np.max(test_r2_scores):.4f} (폴드 {np.argmax(test_r2_scores) + 1})")
@@ -641,7 +563,7 @@ class SellSignalPredictor:
         print("="*70)
     
     def save_training_results(self, filename=None):
-        """학습 결과 저장 (디버깅용)"""
+        """학습 결과 저장 """
         if filename is None:
             filename = f"sell_signal_debug_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         
@@ -668,12 +590,8 @@ class SellSignalPredictor:
 
 def main():
     """Sell Signal Predictor 학습 파이프라인 실행"""
-    print("🛑 Sell Signal Predictor - 매도 청산 신호 예측 모델 학습")
+    print(" Sell Signal Predictor - 매도  신호 예측 모델 학습")
     print("="*70)
-    print("📋 학습 목표:")
-    print("  - 보유 중인 종목의 매도 시점 적절성을 평가")
-    print("  - 타이밍(40%) + 수익실현(35%) + 시장대응(25%) 종합 분석")
-    print("  - Walk-Forward Validation으로 시계열 안정성 검증")
     print("="*70)
     
     # 데이터 경로 설정
@@ -683,14 +601,13 @@ def main():
     
     # 파일 존재 확인
     if not os.path.exists(data_path):
-        print(f"❌ 데이터 파일을 찾을 수 없습니다: {data_path}")
-        print("📁 예상 경로에 거래 데이터 CSV 파일을 준비해주세요.")
+        print(f" 데이터 파일을 찾을 수 없음: {data_path}")
         return
     
     # 모델 초기화
     predictor = SellSignalPredictor()
     
-    # 랜덤 분할 학습 실행 (Walk-Forward 대신)
+    # 랜덤 분할 학습 실행
     try:
         # 데이터 로드
         import pandas as pd
@@ -711,7 +628,7 @@ def main():
         print(f"  Test:  {len(test_df):,}개 ({len(test_df)/len(df)*100:.1f}%)")
         
         # 모델 학습
-        print(f"\n🚀 모델 학습 시작...")
+        print(f"\n 모델 학습 시작...")
         result = predictor.train_model(train_df, hyperparameter_search=False, verbose=True)
         
         # 평가 함수
@@ -742,7 +659,7 @@ def main():
         test_metrics = evaluate_model(predictor, test_df, 'Test')
         
         # 성과 출력
-        print(f"\n📈 성과 지표:")
+        print(f"\n 성과 지표:")
         print("="*60)
         print(f"{'Dataset':<10} {'R²':>8} {'RMSE':>8} {'MAE':>8} {'Mean':>8} {'Std':>8}")
         print("-"*60)
@@ -753,34 +670,29 @@ def main():
         overfit_score = train_metrics['r2'] - val_metrics['r2']
         print(f"\n🔍 오버피팅 분석:")
         if overfit_score > 0.05:
-            print(f"  ⚠️  오버피팅 가능성: Train-Val R² 차이 = {overfit_score:.4f}")
+            print(f"   오버피팅 가능성: Train-Val R² 차이 = {overfit_score:.4f}")
         else:
-            print(f"  ✅ 오버피팅 없음: Train-Val R² 차이 = {overfit_score:.4f}")
+            print(f"   오버피팅 없음: Train-Val R² 차이 = {overfit_score:.4f}")
         
         # Val-Test 성능 안정성
         stability_score = abs(val_metrics['r2'] - test_metrics['r2'])
         print(f"\n📏 성능 안정성:")
         if stability_score < 0.05:
-            print(f"  ✅ 안정적: Val-Test R² 차이 = {stability_score:.4f}")
+            print(f"   안정적: Val-Test R² 차이 = {stability_score:.4f}")
         else:
-            print(f"  ⚠️  불안정: Val-Test R² 차이 = {stability_score:.4f}")
+            print(f"  ️  불안정: Val-Test R² 차이 = {stability_score:.4f}")
         
         # 모델 저장
         model_filename = predictor.save_model()
         
-        print(f"\n🎉 Sell Signal 모델 학습 완료!")
-        print(f"📁 저장된 모델: {model_filename}")
+        print(f"\n Sell Signal 모델 학습 완료!")
+        print(f" 저장된 모델: {model_filename}")
         
-        # 사용법 안내
-        print(f"\n📖 모델 사용법:")
-        print(f"predictor = SellSignalPredictor()")
-        print(f"predictor.load_model('{model_filename}')")
-        print(f"sell_signals = predictor.predict_exit_signal(holding_positions_df)")
-        
+
         return predictor
         
     except Exception as e:
-        print(f"❌ 학습 중 오류 발생: {str(e)}")
+        print(f" 학습 중 오류 발생: {str(e)}")
         import traceback
         traceback.print_exc()
         return None

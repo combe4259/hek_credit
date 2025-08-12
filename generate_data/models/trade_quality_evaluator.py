@@ -3,6 +3,7 @@ import numpy as np
 from sklearn.preprocessing import RobustScaler
 from sklearn.model_selection import TimeSeriesSplit, RandomizedSearchCV, GridSearchCV
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
+from scipy.stats import spearmanr
 import xgboost as xgb
 import joblib
 import json
@@ -339,13 +340,19 @@ class TradeQualityEvaluator:
             'reg_lambda': [0.5, 1.0, 2.0]
         }
         
-        base_model = xgb.XGBRegressor(random_state=42)
+        # GPU 가속 XGBoost 모델 (Colab GPU 환경용)
+        base_model = xgb.XGBRegressor(
+            random_state=42,
+            tree_method='gpu_hist',  # GPU 가속
+            gpu_id=0
+        )
         tscv = TimeSeriesSplit(n_splits=3)
         
-        search = RandomizedSearchCV(
+        # GPU 환경에서는 n_jobs 제거 (충돌 방지)
+        search = GridSearchCV(
             base_model, param_grid, 
-            n_iter=50, cv=tscv, scoring='r2',
-            random_state=42, n_jobs=-1
+            cv=tscv, scoring='r2',
+            verbose=1
         )
         search.fit(X, y)
         
@@ -506,6 +513,10 @@ class TradeQualityEvaluator:
             test_pred = best_model.predict(X_test)
             test_r2 = r2_score(y_test, test_pred)
             
+            # 점수-수익률 상관관계 분석 (테스트 세트에서)
+            if verbose:
+                self.calculate_ranking_performance(test_pred, y_test, verbose=True)
+            
             # 결과 저장
             fold_result = {
                 'fold_id': fold_info['fold_id'],
@@ -563,6 +574,99 @@ class TradeQualityEvaluator:
         print(f"  평균 피처 수:  {np.mean([r['features_used'] for r in self.fold_results]):.0f}개")
         
         print("="*70)
+    
+    def calculate_ranking_performance(self, predictions, actuals, verbose=True):
+        """점수-수익률 상관관계 및 구간별 분석"""
+        if len(predictions) != len(actuals):
+            raise ValueError("예측값과 실제값의 길이가 다릅니다.")
+        
+        # 1. 상관관계 분석
+        spearman_corr, spearman_p = spearmanr(predictions, actuals)
+        pearson_corr = np.corrcoef(predictions, actuals)[0, 1]
+        
+        # 2. 구간별 분석 (5분위)
+        quintiles = np.quantile(predictions, [0.2, 0.4, 0.6, 0.8])
+        
+        results = {
+            'correlations': {
+                'spearman': spearman_corr,
+                'spearman_pvalue': spearman_p,
+                'pearson': pearson_corr
+            },
+            'quintile_analysis': []
+        }
+        
+        if verbose:
+            print("\n" + "="*60)
+            print("📊 점수-수익률 상관관계 분석")
+            print("="*60)
+            print(f"🔗 Spearman 상관계수: {spearman_corr:.4f} (p={spearman_p:.4f})")
+            print(f"🔗 Pearson 상관계수:  {pearson_corr:.4f}")
+            
+            print(f"\n📈 점수 구간별 분석 (총 {len(predictions):,}개 샘플):")
+            print("-" * 60)
+        
+        # 각 분위별 분석
+        quintile_names = ['하위 20%', '하위중 20%', '중위 20%', '상위중 20%', '상위 20%']
+        
+        for i in range(5):
+            if i == 0:
+                mask = predictions <= quintiles[0]
+            elif i == 4:
+                mask = predictions > quintiles[3]
+            else:
+                mask = (predictions > quintiles[i-1]) & (predictions <= quintiles[i])
+            
+            if np.sum(mask) > 0:
+                quintile_actuals = actuals[mask]
+                quintile_preds = predictions[mask]
+                
+                quintile_result = {
+                    'quintile': i + 1,
+                    'name': quintile_names[i],
+                    'count': int(np.sum(mask)),
+                    'pred_range': [float(quintile_preds.min()), float(quintile_preds.max())],
+                    'actual_mean': float(quintile_actuals.mean()),
+                    'actual_std': float(quintile_actuals.std()),
+                    'actual_median': float(np.median(quintile_actuals))
+                }
+                
+                results['quintile_analysis'].append(quintile_result)
+                
+                if verbose:
+                    print(f"{quintile_names[i]:>8} | "
+                          f"샘플: {np.sum(mask):>5,}개 | "
+                          f"예측범위: [{quintile_preds.min():>6.2f}, {quintile_preds.max():>6.2f}] | "
+                          f"실제평균: {quintile_actuals.mean():>7.3f} ± {quintile_actuals.std():>6.3f}")
+        
+        # 3. 단조성 검사 (monotonicity)
+        quintile_means = [q['actual_mean'] for q in results['quintile_analysis']]
+        is_monotonic = all(quintile_means[i] <= quintile_means[i+1] for i in range(len(quintile_means)-1))
+        
+        results['monotonicity'] = {
+            'is_monotonic': is_monotonic,
+            'mean_difference': quintile_means[-1] - quintile_means[0] if len(quintile_means) >= 2 else 0
+        }
+        
+        # 4. Top/Bottom 분석
+        top20_mask = predictions >= np.percentile(predictions, 80)
+        bottom20_mask = predictions <= np.percentile(predictions, 20)
+        
+        results['top_bottom_analysis'] = {
+            'top20_mean': float(actuals[top20_mask].mean()),
+            'bottom20_mean': float(actuals[bottom20_mask].mean()),
+            'spread': float(actuals[top20_mask].mean() - actuals[bottom20_mask].mean())
+        }
+        
+        if verbose:
+            print("-" * 60)
+            print(f"🎯 단조성 검사: {'✅ 통과' if is_monotonic else '❌ 실패'}")
+            print(f"📊 상하위 스프레드: {results['top_bottom_analysis']['spread']:.3f}")
+            print(f"   - 상위 20% 평균: {results['top_bottom_analysis']['top20_mean']:.3f}")
+            print(f"   - 하위 20% 평균: {results['top_bottom_analysis']['bottom20_mean']:.3f}")
+            print("="*60)
+        
+        return results
     
     def save_training_results(self, filename=None):
         """학습 결과 저장 (디버깅용)"""
