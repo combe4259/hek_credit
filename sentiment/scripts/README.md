@@ -103,10 +103,7 @@ print(f"예측: {result['prediction']}")
 ## 환경 변수
 
 ### MongoDB 연결
-```bash
-# .env 파일 또는 시스템 환경변수
-MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net
-```
+
 
 ## 로그 모니터링
 
