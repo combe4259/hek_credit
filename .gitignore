@@ -1,4 +1,5 @@
-
+/LucidSync/.idea
+/LucidSync/node_modules
 
 /venv
 /.idea

@@ -1,24 +1,16 @@
-"""
-Trading Feedback Service - 완전 데이터 드리븐 거래 피드백 시스템
-
-하드코딩된 임계값 없이 실제 모델 예측 분포와 과거 성과 데이터를 기반으로 
-동적이고 적응적인 거래 피드백을 제공합니다.
-"""
-
 import pandas as pd
 import numpy as np
 from datetime import datetime
 import warnings
 warnings.filterwarnings('ignore')
+import shap
 
-# 학습된 모델들 import
+# 학습 모델
 from buy_signal_predictor import BuySignalPredictor
 from sell_signal_predictor import SellSignalPredictor
 from trade_quality_evaluator import TradeQualityEvaluator
 
 class DataDrivenFeedbackService:
-    """완전 데이터 기반 거래 피드백 서비스"""
-    
     def __init__(self, historical_data_path=None):
         # 학습된 모델들
         self.buy_predictor = BuySignalPredictor()
@@ -136,7 +128,7 @@ class DataDrivenFeedbackService:
             # Buy Signal 예측
             if self.buy_predictor.is_trained:
                 buy_scores = []
-                for idx in range(0, len(self.historical_data), 1000):  # 배치 처리
+                for idx in range(0, len(self.historical_data), 1000):
                     batch = self.historical_data.iloc[idx:idx+1000]
                     batch_scores = self.buy_predictor.predict_entry_signal(batch, verbose=False)
                     buy_scores.extend(batch_scores)
@@ -411,10 +403,114 @@ class DataDrivenFeedbackService:
             'data_driven_evaluation': evaluation,
             'adaptive_insights': self._generate_adaptive_insights(evaluation),
             'learning_opportunities': self._identify_learning_opportunities(evaluation),
+            'shap_analysis': self._analyze_shap_contributions(trade_data),
             'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }
         
         return feedback
+    
+    def _analyze_shap_contributions(self, trade_data):
+        """SHAP을 사용한 개별 피처 기여도 분석"""
+        analysis = {}
+        
+        # 데이터 형태 통일
+        if isinstance(trade_data, dict):
+            trade_df = pd.DataFrame([trade_data])
+        else:
+            trade_df = pd.DataFrame([trade_data])
+        
+        try:
+            # Buy Signal SHAP 분석
+            if self.buy_predictor.is_trained:
+                analysis['buy_shap'] = self._get_shap_explanation(
+                    self.buy_predictor, trade_df, 'buy'
+                )
+            
+            # Sell Signal SHAP 분석
+            if self.sell_predictor.is_trained:
+                analysis['sell_shap'] = self._get_shap_explanation(
+                    self.sell_predictor, trade_df, 'sell'
+                )
+            
+            # Quality Score SHAP 분석
+            if self.quality_evaluator.is_trained:
+                analysis['quality_shap'] = self._get_shap_explanation(
+                    self.quality_evaluator, trade_df, 'quality'
+                )
+                
+        except Exception as e:
+            analysis['error'] = f"SHAP 분석 실패: {str(e)}"
+        
+        return analysis
+    
+    def _get_shap_explanation(self, model_predictor, trade_df, model_type):
+        """개별 모델에 대한 SHAP 설명"""
+        try:
+            # 피처 준비
+            X = model_predictor.prepare_features(trade_df)
+            
+            # SHAP Explainer 생성
+            explainer = shap.TreeExplainer(model_predictor.model)
+            
+            # SHAP 값 계산
+            shap_values = explainer.shap_values(X)
+            
+            # 예측값과 기본값
+            prediction = model_predictor.model.predict(X)[0]
+            base_value = explainer.expected_value
+            
+            # 피처별 기여도 정리
+            feature_contributions = []
+            for i, feature in enumerate(X.columns):
+                contribution = shap_values[0][i]
+                actual_value = X.iloc[0][feature]
+                
+                feature_contributions.append({
+                    'feature': feature,
+                    'actual_value': actual_value,
+                    'contribution': contribution,
+                    'abs_contribution': abs(contribution)
+                })
+            
+            # 기여도 순으로 정렬
+            feature_contributions.sort(key=lambda x: x['abs_contribution'], reverse=True)
+            
+            return {
+                'prediction': prediction,
+                'base_value': base_value,
+                'total_contribution': sum([fc['contribution'] for fc in feature_contributions]),
+                'top_contributors': feature_contributions[:5],  # 상위 5개
+                'model_type': model_type
+            }
+            
+        except Exception as e:
+            return {'error': f"{model_type} SHAP 분석 실패: {str(e)}"}
+    
+    def _format_feature_name(self, feature_name):
+        """피처명을 읽기 쉽게 포맷"""
+        replacements = {
+            'entry_': '진입시 ',
+            'exit_': '청산시 ',
+            'market_': '시장 ',
+            '_': ' ',
+            'pe ratio': 'PER',
+            'pb ratio': 'PBR',
+            'roe': 'ROE',
+            'operating margin': '영업이익률',
+            'debt equity ratio': '부채비율',
+            'earnings growth': '이익성장률',
+            'momentum': '모멘텀',
+            'ma dev': '이평선이탈',
+            'volatility': '변동성',
+            'vol change': '변동성변화',
+            'cum return': '누적수익률'
+        }
+        
+        formatted = feature_name.lower()
+        for old, new in replacements.items():
+            formatted = formatted.replace(old, new)
+        
+        return formatted.strip()
     
     def _extract_trade_info(self, trade_data):
         """거래 정보 추출"""
@@ -531,6 +627,10 @@ class DataDrivenFeedbackService:
                 print(f"  {i}. {insight['message']}")
                 print(f"     근거: {insight['data_basis']}")
         
+        # SHAP 기반 상세 분석
+        if 'shap_analysis' in feedback:
+            self._print_shap_analysis(feedback['shap_analysis'])
+        
         # 학습 기회
         if 'learning_opportunities' in feedback:
             print(f"\n학습 기회:")
@@ -538,6 +638,53 @@ class DataDrivenFeedbackService:
                 print(f"  {i}. [{opp['area']}] {opp['learning']}")
         
         print("=" * 80)
+    
+    def _print_shap_analysis(self, shap_analysis):
+        """SHAP 분석 결과 출력"""
+        print(f"\n모델별 점수 기여 요인 분석:")
+        
+        # Buy Signal 분석
+        if 'buy_shap' in shap_analysis and 'error' not in shap_analysis['buy_shap']:
+            buy_shap = shap_analysis['buy_shap']
+            print(f"  Buy Signal ({buy_shap['prediction']:.1f}점):")
+            print(f"    기본값: {buy_shap['base_value']:.1f}점")
+            
+            for contributor in buy_shap['top_contributors'][:3]:
+                feature_name = self._format_feature_name(contributor['feature'])
+                contribution = contributor['contribution']
+                actual_value = contributor['actual_value']
+                sign = "+" if contribution >= 0 else ""
+                print(f"    - {feature_name}: {actual_value:.2f} → {sign}{contribution:.1f}점")
+        
+        # Sell Signal 분석
+        if 'sell_shap' in shap_analysis and 'error' not in shap_analysis['sell_shap']:
+            sell_shap = shap_analysis['sell_shap']
+            print(f"  Sell Signal ({sell_shap['prediction']:.1f}점):")
+            print(f"    기본값: {sell_shap['base_value']:.1f}점")
+            
+            for contributor in sell_shap['top_contributors'][:3]:
+                feature_name = self._format_feature_name(contributor['feature'])
+                contribution = contributor['contribution']
+                actual_value = contributor['actual_value']
+                sign = "+" if contribution >= 0 else ""
+                print(f"    - {feature_name}: {actual_value:.2f} → {sign}{contribution:.1f}점")
+        
+        # Quality Score 분석
+        if 'quality_shap' in shap_analysis and 'error' not in shap_analysis['quality_shap']:
+            quality_shap = shap_analysis['quality_shap']
+            print(f"  Quality Score ({quality_shap['prediction']:.1f}점):")
+            print(f"    기본값: {quality_shap['base_value']:.1f}점")
+            
+            for contributor in quality_shap['top_contributors'][:3]:
+                feature_name = self._format_feature_name(contributor['feature'])
+                contribution = contributor['contribution']
+                actual_value = contributor['actual_value']
+                sign = "+" if contribution >= 0 else ""
+                print(f"    - {feature_name}: {actual_value:.2f} → {sign}{contribution:.1f}점")
+        
+        # 에러 출력
+        if 'error' in shap_analysis:
+            print(f"  분석 실패: {shap_analysis['error']}")
 
 def main():
     """테스트용 메인 함수"""
