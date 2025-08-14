@@ -4,6 +4,7 @@ from sklearn.preprocessing import RobustScaler
 from sklearn.model_selection import TimeSeriesSplit, RandomizedSearchCV, GridSearchCV
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
 from scipy.stats import spearmanr
+
 import xgboost as xgb
 import joblib
 import json
@@ -13,9 +14,11 @@ import warnings
 warnings.filterwarnings('ignore')
 
 class TradeQualityEvaluator:
+
     """거래 품질 평가 모델완료된 매수-매도 거래의 품질을 평가"""
 
     def __init__(self, train_months=36, val_months=6, test_months=6, step_months=3):
+
 
         self.model = None
         self.trade_quality_scalers = {}
@@ -33,9 +36,11 @@ class TradeQualityEvaluator:
         self.best_params = None
         
     def create_quality_score(self, df, risk_scaler=None, eff_scaler=None, verbose=False):
+
         """ 거래 품질 점수 생성 """
         if verbose:
             print("거래 품질 점수 생성 중")
+
         
         df = df.copy()
         
@@ -50,7 +55,9 @@ class TradeQualityEvaluator:
         df['entry_ratio_52w_high'] = df['entry_ratio_52w_high'].fillna(0)
         df['holding_period_days'] = df['holding_period_days'].fillna(0)
 
+
         # 1. 진입 품질 (30%) - Buy Signal 기반
+
         from buy_signal_predictor import BuySignalPredictor
         buy_predictor = BuySignalPredictor()
         
@@ -58,6 +65,7 @@ class TradeQualityEvaluator:
         df_with_buy = buy_predictor.create_entry_signal_score(df, verbose=False)
         df['entry_quality'] = df_with_buy['buy_signal_score']
         
+
         # 2. 청산 타이밍 품질 (30%)
         df['exit_timing_quality'] = self._calculate_exit_timing_without_return(df)
         
@@ -65,24 +73,29 @@ class TradeQualityEvaluator:
         df['result_quality'] = self._score_return(df['return_pct'])
         
         # 4. 최종 거래 품질 점수 (0-100점 스케일 유지)
+
         df['trade_quality_score'] = (
             df['entry_quality'] * 0.3 + 
             df['exit_timing_quality'] * 0.3 +
             df['result_quality'] * 0.4
+
         )
         
         # 0-100 범위 보장
         df['trade_quality_score'] = np.clip(df['trade_quality_score'], 0, 100)
         
         # 스케일러는 호환성을 위해 유지
+
         if risk_scaler is None or eff_scaler is None:
             self.trade_quality_scalers['risk_scaler'] = None
             self.trade_quality_scalers['efficiency_scaler'] = None
         
         if verbose:
+
             print(f"   Trade Quality 점수 생성 완료")
             print(f"  범위: {df['trade_quality_score'].min():.4f} ~ {df['trade_quality_score'].max():.4f}")
             print(f"  평균: {df['trade_quality_score'].mean():.4f}")
+
 
         
         return df
@@ -128,6 +141,7 @@ class TradeQualityEvaluator:
             )
         else:
             momentum_response = 50
+
         
         # 종합 청산 타이밍 점수 (수익률과 무관)
         exit_timing_score = (
@@ -161,12 +175,14 @@ class TradeQualityEvaluator:
         if verbose:
             print("품질 평가용 피처 준비")
 
+
         excluded_features = {
             'return_pct', 'entry_volatility_20d', 'entry_ratio_52w_high', 'holding_period_days',
             'risk_adj_return', 'price_safety', 'risk_management_score',
             'time_efficiency', 'efficiency_score', 'quality_score', 'trade_quality_score'
         }
         
+
 
         available_features = []
         
@@ -179,12 +195,13 @@ class TradeQualityEvaluator:
             'entry_momentum_5d', 'entry_momentum_20d', 'entry_momentum_60d',
             'entry_ma_dev_5d', 'entry_ma_dev_20d', 'entry_ma_dev_60d',
             'entry_volatility_5d', 'entry_volatility_60d',
+
             'entry_vol_change_5d', 'entry_vol_change_20d', 'entry_vol_change_60d',
             'entry_vix', 'entry_tnx_yield'
         ]
         available_features.extend([col for col in entry_features if col in df.columns])
         
-        #  3. 종료 시점 지표
+=
         exit_features = [
             'exit_momentum_5d', 'exit_momentum_20d', 'exit_momentum_60d',
             'exit_ma_dev_5d', 'exit_ma_dev_20d', 'exit_ma_dev_60d',
@@ -193,7 +210,7 @@ class TradeQualityEvaluator:
         ]
         available_features.extend([col for col in exit_features if col in df.columns])
         
-        # 4. 변화량 지표
+=
         change_features = [
             'change_momentum_5d', 'change_momentum_20d', 'change_momentum_60d',
             'change_ma_dev_5d', 'change_ma_dev_20d', 'change_ma_dev_60d',
@@ -202,7 +219,7 @@ class TradeQualityEvaluator:
         ]
         available_features.extend([col for col in change_features if col in df.columns])
         
-        # 5. 보유 기간 중 시장 정보
+=
         market_features = [
             'market_return_during_holding',
             'excess_return'
@@ -214,6 +231,7 @@ class TradeQualityEvaluator:
                         if col in df.columns and col not in excluded_features]
         
         if verbose:
+
             print(f"  사용 피처: {len(self.features)}개")
 
         feature_data = df[self.features].select_dtypes(include=[np.number])
@@ -224,9 +242,11 @@ class TradeQualityEvaluator:
         return feature_data
 
     def train_model(self, df, hyperparameter_search=False, verbose=False):
+
         """거래 품질 모델 훈련"""
         if verbose:
             print("거래 품질 모델 훈련 시작")
+
         
         # 품질 점수 생성
         df_with_score = self.create_quality_score(df, verbose=verbose)
@@ -239,7 +259,7 @@ class TradeQualityEvaluator:
         if hyperparameter_search:
             best_params = self._optimize_hyperparameters(X, y, verbose=verbose)
         else:
-            # 기본 파라미터
+
             best_params = {
                 'max_depth': 6,
                 'learning_rate': 0.1,
@@ -263,7 +283,9 @@ class TradeQualityEvaluator:
         self.is_trained = True
         
         if verbose:
+
             print(f"  거래 품질 모델 훈련 완료")
+
             print(f"  R² Score: {r2:.4f}")
             print(f"  RMSE: {rmse:.4f}")
         
@@ -277,6 +299,7 @@ class TradeQualityEvaluator:
 
     def predict_quality(self, df, verbose=False):
         """
+
         거래 품질 예측
         """
         if not self.is_trained:
@@ -284,6 +307,7 @@ class TradeQualityEvaluator:
         
         if verbose:
             print("거래 품질 예측")
+
         
         # 피처 준비
         X = self.prepare_features(df, verbose=False)
@@ -293,6 +317,7 @@ class TradeQualityEvaluator:
         
         if verbose:
             print(f"  {len(predictions)}개 거래의 품질 예측 완료")
+
             print(f"  예측 범위: {predictions.min():.4f} ~ {predictions.max():.4f}")
         
         return predictions
@@ -301,6 +326,7 @@ class TradeQualityEvaluator:
         """하이퍼파라미터 최적화"""
         if verbose:
             print("  하이퍼파라미터 최적화 중")
+
         
         param_grid = {
             'max_depth': [4, 5, 6, 7, 8],
@@ -325,6 +351,7 @@ class TradeQualityEvaluator:
             base_model, param_grid, 
             cv=tscv, scoring='r2',
             verbose=1
+
         )
         search.fit(X, y)
         
@@ -351,6 +378,7 @@ class TradeQualityEvaluator:
         
         joblib.dump(save_data, filename)
         print(f" Trade Quality 모델 저장: {filename}")
+
         return filename
 
     def load_model(self, filename):
@@ -362,7 +390,9 @@ class TradeQualityEvaluator:
         self.features = save_data['features']
         self.is_trained = True
         
+
         print(f" Trade Quality 모델 로드: {filename}")
+
         return True
 
     # ================================
@@ -372,6 +402,7 @@ class TradeQualityEvaluator:
     def create_time_folds(self, df, verbose=False):
         if verbose:
             print(" Trade Quality Walk-Forward 시간 폴드 생성")
+
         
         df = df.copy()
         df['date'] = pd.to_datetime(df['entry_datetime'])
@@ -422,13 +453,17 @@ class TradeQualityEvaluator:
     def run_walk_forward_training(self, data_path, hyperparameter_search=True, verbose=True):
         """Trade Quality Walk-Forward 학습 및 평가"""
         if verbose:
+
             print(" Trade Quality Walk-Forward 학습 시작")
+
             print("="*60)
         
         # 데이터 로드
         df = pd.read_csv(data_path)
         if verbose:
+
             print(f" 데이터 로드: {len(df):,}개 거래")
+
         
         # Trade Quality 점수 생성
         df = self.create_quality_score(df, verbose=verbose)
@@ -441,6 +476,7 @@ class TradeQualityEvaluator:
         for fold_info in tqdm(folds, desc="폴드별 학습"):
             if verbose:
                 print(f"\n 폴드 {fold_info['fold_id']} 학습 중...")
+
             
             # 폴드별 데이터 분할
             train_data = df.loc[fold_info['train_indices']]
@@ -483,6 +519,7 @@ class TradeQualityEvaluator:
             
             test_pred = best_model.predict(X_test)
             test_r2 = r2_score(y_test, test_pred)
+
 
             # 테스트셋 점수-수익률 상관관계 분석
             if verbose:
@@ -529,16 +566,19 @@ class TradeQualityEvaluator:
         
         print("\n" + "="*70)
         print(" Trade Quality Walk-Forward 결과 요약")
+
         print("="*70)
         
         val_r2_scores = [result['val_r2'] for result in self.fold_results]
         test_r2_scores = [result['test_r2'] for result in self.fold_results]
         
+
         print(f" 폴드별 성능:")
         for result in self.fold_results:
             print(f"  폴드 {result['fold_id']}: Val R² = {result['val_r2']:.4f}, Test R² = {result['test_r2']:.4f}")
         
         print(f"\n 전체 통계:")
+
         print(f"  Validation R²: {np.mean(val_r2_scores):.4f} ± {np.std(val_r2_scores):.4f}")
         print(f"  Test R²:       {np.mean(test_r2_scores):.4f} ± {np.std(test_r2_scores):.4f}")
         print(f"  최고 성능:     {np.max(test_r2_scores):.4f} (폴드 {np.argmax(test_r2_scores) + 1})")
@@ -546,6 +586,7 @@ class TradeQualityEvaluator:
         
         print("="*70)
     
+
     def calculate_ranking_performance(self, predictions, actuals, verbose=True):
         if len(predictions) != len(actuals):
             raise ValueError("예측값과 실제값의 길이가 다름")
@@ -640,6 +681,7 @@ class TradeQualityEvaluator:
     
     def save_training_results(self, filename=None):
         """학습 결과 저장 """
+
         if filename is None:
             filename = f"trade_quality_debug_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         
@@ -653,6 +695,7 @@ class TradeQualityEvaluator:
         }
         
         for result in self.fold_results:
+
             fold_data = {key: value for key, value in result.items() 
                         if key != 'best_model'}
             save_data['fold_results'].append(fold_data)
@@ -660,13 +703,17 @@ class TradeQualityEvaluator:
         with open(filename, 'w') as f:
             json.dump(save_data, f, indent=2, default=str)
         
+
         print(f" Trade Quality 학습 결과 저장: {filename}")
+
         return filename
 
 def main():
     """Trade Quality Evaluator 학습 파이프라인 실행"""
+
     print(" Trade Quality Evaluator - 거래 품질 평가 모델 학습")
     print("="*70)
+
 
     
     # 데이터 경로 설정
@@ -677,12 +724,13 @@ def main():
     # 파일 존재 확인
     if not os.path.exists(data_path):
         print(f" 데이터 파일을 찾을 수 없습니다: {data_path}")
+
         return
     
     # 모델 초기화
     evaluator = TradeQualityEvaluator()
     
-    # 분할 학습 실행
+
     try:
         # 데이터 로드
         import pandas as pd
@@ -691,6 +739,7 @@ def main():
         import numpy as np
         
         df = pd.read_csv(data_path)
+
         print(f"\n데이터 로드: {len(df):,}개 거래")
         
 
@@ -702,6 +751,7 @@ def main():
             df['holding_period_days'].notna() &
             df['entry_volatility_20d'].notna() &
             df['entry_ratio_52w_high'].notna()
+
         ].copy()
         
         print(f"📊 펀더멘털 데이터 필터링: {len(df_filtered):,}개 ({len(df_filtered)/len(df)*100:.1f}%)")
@@ -716,7 +766,9 @@ def main():
         print(f"  Test:  {len(test_df):,}개 ({len(test_df)/len(df_filtered)*100:.1f}%)")
         
         # 모델 학습
+
         print(f"\n 모델 학습 시작...")
+
         result = evaluator.train_model(train_df, hyperparameter_search=False, verbose=True)
         
         # 평가 함수
@@ -746,8 +798,6 @@ def main():
         val_metrics = evaluate_model(evaluator, val_df, 'Val')
         test_metrics = evaluate_model(evaluator, test_df, 'Test')
         
-        # 성과 출력
-        print(f"\n 성과 지표:")
         print("="*60)
         print(f"{'Dataset':<10} {'R²':>8} {'RMSE':>8} {'MAE':>8} {'Mean':>8} {'Std':>8}")
         print("-"*60)
@@ -756,11 +806,13 @@ def main():
         
         # 오버피팅 체크
         overfit_score = train_metrics['r2'] - val_metrics['r2']
+
         print(f"\n 오버피팅 분석:")
         if overfit_score > 0.05:
             print(f"  ️  오버피팅 가능성: Train-Val R² 차이 = {overfit_score:.4f}")
         else:
             print(f"   오버피팅 없음: Train-Val R² 차이 = {overfit_score:.4f}")
+
         
         # Val-Test 성능 안정성
         stability_score = abs(val_metrics['r2'] - test_metrics['r2'])
@@ -769,6 +821,7 @@ def main():
             print(f"   안정적: Val-Test R² 차이 = {stability_score:.4f}")
         else:
             print(f"    불안정: Val-Test R² 차이 = {stability_score:.4f}")
+
         
         # 모델 저장
         model_filename = evaluator.save_model()
@@ -778,6 +831,7 @@ def main():
         
         # 사용법 안내
         print(f"\n 모델 사용법:")
+
         print(f"evaluator = TradeQualityEvaluator()")
         print(f"evaluator.load_model('{model_filename}')")
         print(f"quality_scores = evaluator.predict_quality(completed_trades_df)")
@@ -785,7 +839,9 @@ def main():
         return evaluator
         
     except Exception as e:
+
         print(f" 학습 중 오류 발생: {str(e)}")
+
         import traceback
         traceback.print_exc()
         return None

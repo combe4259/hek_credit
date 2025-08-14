@@ -19,6 +19,7 @@ class SellSignalPredictor:
     """
 
     def __init__(self, train_months=36, val_months=6, test_months=6, step_months=3):
+
         self.model = None
         self.sell_signal_scalers = {}
         self.features = None
@@ -33,17 +34,20 @@ class SellSignalPredictor:
         self.best_params = None
         
     def create_exit_signal_score(self, df, timing_scaler=None, profit_scaler=None, market_scaler=None, verbose=False):
+
         """매도 신호 점수 생성"""
         if verbose:
             print("매도 신호 점수 생성 중")
 
         df = df.copy()
 
+
         required_columns = ['return_pct', 'holding_period_days', 'exit_volatility_20d', 
                           'exit_momentum_20d', 'change_volatility_5d', 'change_vix']
         missing_columns = [col for col in required_columns if col not in df.columns]
         if missing_columns:
             raise ValueError(f"컬럼이 없음: {missing_columns}")
+
         
         df['return_pct'] = df['return_pct'].fillna(0)
         df['holding_period_days'] = df['holding_period_days'].fillna(1)
@@ -51,6 +55,7 @@ class SellSignalPredictor:
         df['exit_momentum_20d'] = df['exit_momentum_20d'].fillna(0)
         df['change_volatility_5d'] = df['change_volatility_5d'].fillna(0)
         df['change_vix'] = df['change_vix'].fillna(0)
+
 
         # 1. 기술적 매도 신호 점수 (40%) - return_pct 최소 사용
         # Exit 시점 기술적 지표들로만 구성
@@ -176,6 +181,7 @@ class SellSignalPredictor:
             profit_scaled = profit_scaler.transform(df[['profit_quality_raw']])
             market_scaled = market_scaler.transform(df[['market_response_raw']])
         
+
         # 가중 평균으로 최종 점수 계산 (RobustScaler 결과를 0-100 스케일로 변환)
         raw_score = (timing_scaled.flatten() * 0.4 + 
                     profit_scaled.flatten() * 0.35 + 
@@ -200,6 +206,7 @@ class SellSignalPredictor:
         return df
 
     def prepare_features(self, df, verbose=False):
+
         """ 피처 준비"""
         if verbose:
             print("매도 피처 준비")
@@ -232,26 +239,29 @@ class SellSignalPredictor:
         ]
         available_features.extend([col for col in entry_features if col in df.columns])
         
+
         # 3.  시점 정보
         exit_features = [
             'exit_momentum_5d', 'exit_momentum_60d',
             'exit_ma_dev_5d', 'exit_ma_dev_20d', 'exit_ma_dev_60d',
             'exit_volatility_5d', 'exit_volatility_60d',
+
             'exit_vix', 'exit_tnx_yield', 'exit_ratio_52w_high'
         ]
         available_features.extend([col for col in exit_features if col in df.columns])
         
-        # 4. 보유 기간 중 변화
+
         change_features = [
             'change_momentum_5d', 'change_momentum_20d', 'change_momentum_60d',
             'change_ma_dev_5d', 'change_ma_dev_20d', 'change_ma_dev_60d',
             'change_volatility_20d', 'change_volatility_60d',  # change_volatility_5d 제외
             'change_tnx_yield', 'change_ratio_52w_high'
 
+
         ]
         available_features.extend([col for col in change_features if col in df.columns])
         
-        # 5. 시장 환경 정보
+
         market_features = [
             'market_return_during_holding',
             'excess_return'
@@ -263,7 +273,9 @@ class SellSignalPredictor:
                         if col in df.columns and col not in excluded_features]
         
         if verbose:
+
             print(f"  매도 사용 피처: {len(self.features)}개")
+
 
         feature_data = df[self.features].select_dtypes(include=[np.number])
         
@@ -273,6 +285,7 @@ class SellSignalPredictor:
         return feature_data
 
     def train_model(self, df, hyperparameter_search=False, verbose=False):
+
         """매도  신호 예측 모델 훈련"""
         if verbose:
             print("매도 신호 모델 훈련 시작")
@@ -296,6 +309,7 @@ class SellSignalPredictor:
         
         #  신호 점수 생성
         df_with_score = self.create_exit_signal_score(df_filtered, verbose=verbose)
+
         
         # 피처 준비
         X = self.prepare_features(df_with_score, verbose=verbose)
@@ -305,7 +319,7 @@ class SellSignalPredictor:
         if hyperparameter_search:
             best_params = self._optimize_hyperparameters(X, y, verbose=verbose)
         else:
-            # 기본 파라미터
+
             best_params = {
                 'max_depth': 7,
                 'learning_rate': 0.05,
@@ -329,7 +343,9 @@ class SellSignalPredictor:
         self.is_trained = True
         
         if verbose:
+
             print(f"  매도 신호 예측 모델 훈련 완료")
+
             print(f"  R² Score: {r2:.4f}")
             print(f"  RMSE: {rmse:.4f}")
         
@@ -342,12 +358,14 @@ class SellSignalPredictor:
         }
 
     def predict_exit_signal(self, df, verbose=False):
+
         """신호 강도 예측 """
         if not self.is_trained:
             raise ValueError("모델이 훈련되지 않음.")
         
         if verbose:
             print("매도 신호 예측")
+
         
         # 피처 준비
         X = self.prepare_features(df, verbose=False)
@@ -357,12 +375,14 @@ class SellSignalPredictor:
         
         if verbose:
             print(f"  {len(predictions)}개 포지션의  신호 예측 완료")
+
             print(f"  신호 강도 범위: {predictions.min():.4f} ~ {predictions.max():.4f}")
             print(f"  평균 신호 강도: {predictions.mean():.4f}")
         
         return predictions
 
     def get_signal_interpretation(self, score):
+
         """신호 점수 해석"""
         if score > 2:
             return "즉시 매도 권장"
@@ -391,6 +411,7 @@ class SellSignalPredictor:
         }
         
 
+
         base_model = xgb.XGBRegressor(
             random_state=42,
             tree_method='gpu_hist',
@@ -402,6 +423,7 @@ class SellSignalPredictor:
             base_model, param_grid, 
             cv=tscv, scoring='r2',
             verbose=1
+
         )
         search.fit(X, y)
         
@@ -427,7 +449,9 @@ class SellSignalPredictor:
         }
         
         joblib.dump(save_data, filename)
+
         print(f" Sell Signal 모델 저장: {filename}")
+
         return filename
 
     def load_model(self, filename):
@@ -449,6 +473,7 @@ class SellSignalPredictor:
     def create_time_folds(self, df, verbose=False):
         if verbose:
             print("Sell Signal Walk-Forward 시간 폴드 생성")
+
         
         df = df.copy()
         df['date'] = pd.to_datetime(df['exit_date'])
@@ -498,14 +523,18 @@ class SellSignalPredictor:
     
     def run_walk_forward_training(self, data_path, hyperparameter_search=True, verbose=True):
 
+
         if verbose:
             print("Sell Signal Walk-Forward 학습 시작")
+
             print("="*60)
         
         # 데이터 로드
         df = pd.read_csv(data_path)
         if verbose:
+
             print(f"데이터 로드: {len(df):,}개 거래")
+
         
         # Sell Signal 점수 생성
         df = self.create_exit_signal_score(df, verbose=verbose)
@@ -517,7 +546,9 @@ class SellSignalPredictor:
         
         for fold_info in tqdm(folds, desc="폴드별 학습"):
             if verbose:
+
                 print(f"\n 폴드 {fold_info['fold_id']} 학습 중")
+
             
             # 폴드별 데이터 분할
             train_data = df.loc[fold_info['train_indices']]
@@ -533,13 +564,16 @@ class SellSignalPredictor:
             y_val = val_data['sell_signal_score']
             y_test = test_data['sell_signal_score']
 
+
             if hyperparameter_search:
                 search_result = self._optimize_hyperparameters(X_train, y_train, verbose=False)
                 best_params = search_result
             else:
 
+
                 best_params = {
                     'tree_method': 'hist',
+
                     'subsample': 0.75, 
                     'scale_pos_weight': 10, 
                     'reg_lambda': 20.0, 
@@ -608,21 +642,25 @@ class SellSignalPredictor:
     def _print_fold_summary(self):
         """폴드별 결과 요약 출력"""
         if not self.fold_results:
+
             print("폴드 결과가 없습니다.")
             return
         
         print("\n" + "="*70)
         print("Sell Signal Walk-Forward 결과 요약")
+
         print("="*70)
         
         val_r2_scores = [result['val_r2'] for result in self.fold_results]
         test_r2_scores = [result['test_r2'] for result in self.fold_results]
         
+
         print(f" 폴드별 성능:")
         for result in self.fold_results:
             print(f"  폴드 {result['fold_id']}: Val R² = {result['val_r2']:.4f}, Test R² = {result['test_r2']:.4f}")
         
         print(f"\n 전체 통계:")
+
         print(f"  Validation R²: {np.mean(val_r2_scores):.4f} ± {np.std(val_r2_scores):.4f}")
         print(f"  Test R²:       {np.mean(test_r2_scores):.4f} ± {np.std(test_r2_scores):.4f}")
         print(f"  최고 성능:     {np.max(test_r2_scores):.4f} (폴드 {np.argmax(test_r2_scores) + 1})")
@@ -631,7 +669,7 @@ class SellSignalPredictor:
         print("="*70)
     
     def save_training_results(self, filename=None):
-        """학습 결과 저장 """
+
         if filename is None:
             filename = f"sell_signal_debug_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         
@@ -658,8 +696,10 @@ class SellSignalPredictor:
 
 def main():
     """Sell Signal Predictor 학습 파이프라인 실행"""
+
     print(" Sell Signal Predictor - 매도  신호 예측 모델 학습")
     print("="*70)
+
     print("="*70)
     
     # 데이터 경로 설정
@@ -669,13 +709,15 @@ def main():
     
     # 파일 존재 확인
     if not os.path.exists(data_path):
+
         print(f" 데이터 파일을 찾을 수 없음: {data_path}")
+
         return
     
     # 모델 초기화
     predictor = SellSignalPredictor()
     
-    # 랜덤 분할 학습 실행
+
     try:
         # 데이터 로드
         import pandas as pd
@@ -686,6 +728,7 @@ def main():
         df = pd.read_csv(data_path)
         print(f"\n📊 데이터 로드: {len(df):,}개 거래")
         
+
         # 펀더멘털 데이터가 있는 것만 필터링 (강화된 버전)
         df_filtered = df[
             df['entry_pe_ratio'].notna() & 
@@ -712,6 +755,7 @@ def main():
         
         # 모델 학습
         print(f"\n 모델 학습 시작...")
+
         result = predictor.train_model(train_df, hyperparameter_search=False, verbose=True)
         
         # 평가 함수
@@ -742,7 +786,7 @@ def main():
         test_metrics = evaluate_model(predictor, test_df, 'Test')
         
         # 성과 출력
-        print(f"\n 성과 지표:")
+
         print("="*60)
         print(f"{'Dataset':<10} {'R²':>8} {'RMSE':>8} {'MAE':>8} {'Mean':>8} {'Std':>8}")
         print("-"*60)
@@ -753,21 +797,26 @@ def main():
         overfit_score = train_metrics['r2'] - val_metrics['r2']
         print(f"\n🔍 오버피팅 분석:")
         if overfit_score > 0.05:
+
             print(f"   오버피팅 가능성: Train-Val R² 차이 = {overfit_score:.4f}")
         else:
             print(f"   오버피팅 없음: Train-Val R² 차이 = {overfit_score:.4f}")
+
         
         # Val-Test 성능 안정성
         stability_score = abs(val_metrics['r2'] - test_metrics['r2'])
         print(f"\n📏 성능 안정성:")
         if stability_score < 0.05:
+
             print(f"   안정적: Val-Test R² 차이 = {stability_score:.4f}")
         else:
             print(f"  ️  불안정: Val-Test R² 차이 = {stability_score:.4f}")
+
         
         # 모델 저장
         model_filename = predictor.save_model()
         
+
         print(f"\n Sell Signal 모델 학습 완료!")
         print(f" 저장된 모델: {model_filename}")
         
@@ -776,6 +825,7 @@ def main():
         
     except Exception as e:
         print(f" 학습 중 오류 발생: {str(e)}")
+
         import traceback
         traceback.print_exc()
         return None
