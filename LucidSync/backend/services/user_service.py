@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from passlib.hash import bcrypt
-from backend.models.user import User
+from models.user import User
 
 def get_user_by_user_id(db: Session, user_id: str) -> User | None:
     return db.execute(select(User).where(User.user_id == user_id)).scalar_one_or_none()

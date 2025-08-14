@@ -29,6 +29,11 @@ const MockInvestment = ({ user }) => {
   const [aiAnalysisResult, setAiAnalysisResult] = useState(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [aiInitialized, setAiInitialized] = useState(false);
+  
+  // 뉴스 감정 분석 관련 state 추가
+  const [newsAnalysis, setNewsAnalysis] = useState(null);
+  const [aggregateNews, setAggregateNews] = useState(null);
+  const [newsLoading, setNewsLoading] = useState(false);
 
   // AI 모델 초기화
   useEffect(() => {
@@ -52,6 +57,8 @@ const MockInvestment = ({ user }) => {
     
     // 초기 분석 실행
     triggerRealtimeAIAnalysis(selectedSymbol);
+    // 초기 뉴스 감정 분석 실행
+    fetchNewsSentiment(selectedStock);
     
     // 5초마다 자동 분석
     const intervalId = setInterval(() => {
@@ -201,7 +208,7 @@ const MockInvestment = ({ user }) => {
       recommendation: '실시간 분석 대기',
       confidence: '0%',
       signalScore: 0,
-      analysis: '🔄 실시간 AI 분석이 자동으로 시작됩니다...',
+      analysis: ' 실시간 AI 분석이 자동으로 시작됩니다...',
       keyPoints: ['실시간 데이터 기반 분석', 'Yahoo Finance 연동', '5초마다 자동 업데이트'],
       riskFactors: ['시장 변동성 확인 필요'],
       isRealtime: false
@@ -232,6 +239,44 @@ const MockInvestment = ({ user }) => {
     const symbol = aiTradingService.getTickerSymbol(stockName);
     setSelectedSymbol(symbol);
     setAiAnalysisResult(null); // 종목 변경 시 이전 분석 결과 초기화
+    
+    // 뉴스 감정 분석도 새로 가져오기
+    fetchNewsSentiment(stockName);
+  };
+
+  // 뉴스 감정 분석 가져오기
+  const fetchNewsSentiment = async (stockName) => {
+    setNewsLoading(true);
+    try {
+      // 개별 뉴스 분석과 종합 점수를 병렬로 가져오기
+      const [newsResponse, aggregateResponse] = await Promise.allSettled([
+        fetch(`http://localhost:8000/api/ai/realtime/news-sentiment/${stockName}?limit=5`),
+        fetch(`http://localhost:8000/api/ai/realtime/news-sentiment/aggregate/${stockName}?max_days=14`)
+      ]);
+
+      // 개별 뉴스 분석 결과 처리
+      if (newsResponse.status === 'fulfilled' && newsResponse.value.ok) {
+        const newsResult = await newsResponse.value.json();
+        setNewsAnalysis(newsResult.status === 'success' ? newsResult.news_analysis : null);
+      } else {
+        setNewsAnalysis(null);
+      }
+
+      // 종합 감정 점수 처리
+      if (aggregateResponse.status === 'fulfilled' && aggregateResponse.value.ok) {
+        const aggregateResult = await aggregateResponse.value.json();
+        setAggregateNews(aggregateResult.status === 'success' ? aggregateResult.aggregate_analysis : null);
+      } else {
+        setAggregateNews(null);
+      }
+
+    } catch (error) {
+      console.error('뉴스 감정 분석 오류:', error);
+      setNewsAnalysis(null);
+      setAggregateNews(null);
+    } finally {
+      setNewsLoading(false);
+    }
   };
 
   // LiveQuotesList에서 주가 데이터를 받아오기 위한 콜백
@@ -252,7 +297,7 @@ const MockInvestment = ({ user }) => {
     if (isAnalyzing) return;
     
     try {
-      console.log(`🤖 실시간 AI 분석 시작: ${symbol}`);
+      console.log(` 실시간 AI 분석 시작: ${symbol}`);
       
       // 병렬로 매수/매도 신호 분석
       const [buyAnalysis, sellAnalysis] = await Promise.allSettled([
@@ -301,7 +346,7 @@ const MockInvestment = ({ user }) => {
       const signal = aiAnalysisResult.buySignal;
       
       const confirmBuy = confirm(
-        `🤖 실시간 AI 분석 결과\n\n` +
+        ` 실시간 AI 분석 결과\n\n` +
         `종목: ${selectedStock} (${selectedSymbol})\n` +
         `추천: ${signal.recommendation}\n` +
         `신호 점수: ${signal.signalScore.toFixed(1)}/100\n` +
@@ -627,6 +672,58 @@ const MockInvestment = ({ user }) => {
                   <li key={index}>{risk}</li>
                 ))}
               </ul>
+            </div>
+            
+            {/* 뉴스 감정 분석 섹션 */}
+            <div className="ai-realtime-analysis">
+              <h5>뉴스 감정 분석</h5>
+              {newsLoading ? (
+                <div className="loading-indicator">뉴스 분석 중...</div>
+              ) : (
+                <>
+                  {/* 종합 감정 점수 */}
+                  {aggregateNews && (
+                    <div className="news-aggregate-section">
+                      <div className="aggregate-score">
+                        <span className="score-label">종합 감정 점수:</span>
+                        <span className={`score-value ${aggregateNews.aggregate_score_100 > 60 ? 'positive' : aggregateNews.aggregate_score_100 < 40 ? 'negative' : 'neutral'}`}>
+                          {aggregateNews.aggregate_score_100?.toFixed(1)}/100
+                        </span>
+                        <span className="prediction-badge">{aggregateNews.overall_prediction}</span>
+                      </div>
+                      <div className="news-breakdown">
+                        <span>호재 {aggregateNews.news_breakdown?.positive || 0}개</span>
+                        <span>악재 {aggregateNews.news_breakdown?.negative || 0}개</span>
+                        <span>중립 {aggregateNews.news_breakdown?.neutral || 0}개</span>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* 개별 뉴스 분석 */}
+                  {newsAnalysis && newsAnalysis.length > 0 && (
+                    <div className="individual-news-section">
+                      <h6>최신 뉴스 분석</h6>
+                      <div className="news-list">
+                        {newsAnalysis.slice(0, 3).map((news, index) => (
+                          <div key={index} className="news-item">
+                            <div className="news-title">{news.title}</div>
+                            <div className="news-sentiment">
+                              <span className={`sentiment-score ${news.prediction?.toLowerCase()}`}>
+                                {news.impact_score_100?.toFixed(1)}/100
+                              </span>
+                              <span className="sentiment-prediction">{news.prediction}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {(!newsAnalysis || newsAnalysis.length === 0) && !aggregateNews && (
+                    <div className="no-news-data">뉴스 분석 데이터가 없습니다.</div>
+                  )}
+                </>
+              )}
             </div>
           </div>
         </div>

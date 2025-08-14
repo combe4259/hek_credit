@@ -1,6 +1,6 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
-from backend.core.settings import settings
+from core.settings import settings
 
 class Base(DeclarativeBase):
     pass

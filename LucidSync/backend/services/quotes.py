@@ -3,7 +3,7 @@ import asyncio, time, logging
 import yfinance as yf
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
-from backend.schemas.stock_schema import StockItem
+from schemas.stock_schema import StockItem
 
 logger = logging.getLogger(__name__)
 

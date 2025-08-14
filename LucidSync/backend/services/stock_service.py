@@ -1,5 +1,5 @@
 import yfinance as yf
-from backend.schemas.stock_schema import StockItem
+from schemas.stock_schema import StockItem
 
 def get_stocks_list(symbols: list[str]) -> list[StockItem]:
     result = []

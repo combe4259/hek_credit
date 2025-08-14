@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import LiveQuotesList from './LiveQuotesList';
 import './TabContent.css';
 
@@ -7,6 +7,9 @@ const MyStocks = ({ user }) => {
   const [selectedStock, setSelectedStock] = useState('Apple');
   const [currentStockData, setCurrentStockData] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [newsAnalysis, setNewsAnalysis] = useState(null);
+  const [aggregateNews, setAggregateNews] = useState(null);
+  const [newsLoading, setNewsLoading] = useState(false);
   
   // 보유 주식 데이터 (더미 데이터)
   const myStocks = [
@@ -28,7 +31,48 @@ const MyStocks = ({ user }) => {
 
   const handleStockSelect = (stockName) => {
     setSelectedStock(stockName);
+    // 주식 선택 시 뉴스 감정 분석도 가져오기
+    fetchNewsSentiment(stockName);
   };
+
+  // 뉴스 감정 분석 가져오기
+  const fetchNewsSentiment = async (stockName) => {
+    setNewsLoading(true);
+    try {
+      const response = await fetch(`http://localhost:8000/api/news/sentiment/analyze-stock`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          stock_name: stockName,
+          news_limit: 10,
+          max_days: 14
+        })
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        if (result.success) {
+          setNewsAnalysis(result.data);
+        } else {
+          setNewsAnalysis({ error: '뉴스 분석 실패' });
+        }
+      } else {
+        setNewsAnalysis({ error: '서버 응답 오류' });
+      }
+    } catch (error) {
+      console.error('뉴스 감정 분석 오류:', error);
+      setNewsAnalysis({ error: '네트워크 오류' });
+    } finally {
+      setNewsLoading(false);
+    }
+  };
+
+  // 컴포넌트 마운트 시 초기 뉴스 감정 분석 가져오기
+  useEffect(() => {
+    fetchNewsSentiment(selectedStock);
+  }, []);
 
   // LiveQuotesList에서 주가 데이터를 받아오기 위한 콜백
   const handleStockData = (stockData) => {
