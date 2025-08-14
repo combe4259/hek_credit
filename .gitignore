@@ -1,3 +1,7 @@
+/LucidSync/.idea
+/LucidSync/node_modules
+/LucidSync/venv
+
 /venv
 /.idea
 .python-version
