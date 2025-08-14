@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { portfolioService } from '../services/portfolioService';
 import aiTradingService from '../services/aiTradingService';
 import LiveQuotesList from './LiveQuotesList';
+import PortfolioDetail from './PortfolioDetail';
 import './TabContent.css';
 
 const MockInvestment = ({ user }) => {
@@ -14,6 +15,7 @@ const MockInvestment = ({ user }) => {
   const [error, setError] = useState(null);
   const [selectedPortfolio, setSelectedPortfolio] = useState(null);
   const [currentStockData, setCurrentStockData] = useState(null);
+  const [showPortfolioDetail, setShowPortfolioDetail] = useState(false);
   const [investmentSettings, setInvestmentSettings] = useState({
     portfolioTitle: '',
     totalAssets: '',
@@ -43,6 +45,24 @@ const MockInvestment = ({ user }) => {
     
     initializeAI();
   }, []);
+  
+  // 실시간 AI 분석 주기적 실행 (5초마다)
+  useEffect(() => {
+    if (!aiInitialized || !selectedSymbol || !isActiveInvestment) return;
+    
+    // 초기 분석 실행
+    triggerRealtimeAIAnalysis(selectedSymbol);
+    
+    // 5초마다 자동 분석
+    const intervalId = setInterval(() => {
+      if (currentStockData && currentStockData.price) {
+        console.log(`⏱️ 주기적 AI 분석: ${selectedSymbol}`);
+        triggerRealtimeAIAnalysis(selectedSymbol);
+      }
+    }, 5000); // 5초마다 실행
+    
+    return () => clearInterval(intervalId);
+  }, [aiInitialized, selectedSymbol, isActiveInvestment]);
 
   // 포트폴리오 목록 가져오기
   useEffect(() => {
@@ -121,43 +141,70 @@ const MockInvestment = ({ user }) => {
     }
   };
 
-  // 포트폴리오 클릭 시 투자 화면으로 이동
+  // 포트폴리오 클릭 시 상세 화면으로 이동
   const handlePortfolioClick = (portfolio) => {
     setSelectedPortfolio(portfolio);
-    setIsActiveInvestment(true);
+    setShowPortfolioDetail(true);
   };
 
   // 실시간 AI 분석 결과를 기반으로 표시할 내용
   const getAIAnalysisDisplay = () => {
-    // 실제 AI 분석 결과가 있으면 그것을 사용
+    // 실시간 AI 분석 결과가 있으면 사용
     if (aiAnalysisResult) {
-      return {
-        recommendation: aiAnalysisResult.recommendation || '분석 중',
-        confidence: `${(aiAnalysisResult.confidence * 100).toFixed(1)}%`,
-        signalScore: aiAnalysisResult.signalScore,
-        analysis: aiAnalysisResult.type === 'buy' 
-          ? `AI 매수 신호 분석: 신호 점수 ${aiAnalysisResult.signalScore?.toFixed(1)}/100`
-          : `AI 매도 신호 분석: 신호 점수 ${aiAnalysisResult.signalScore?.toFixed(1)}/100`,
-        keyPoints: aiAnalysisResult.buyRecommendation 
-          ? [`신호 강도: ${aiAnalysisResult.buyRecommendation.signal_strength}`,
-             `리스크 수준: ${aiAnalysisResult.buyRecommendation.risk_level}`,
-             `추천 포지션: ${aiAnalysisResult.buyRecommendation.suggested_position_size}`]
-          : [],
-        riskFactors: aiAnalysisResult.fundamentals 
-          ? [`VIX: ${aiAnalysisResult.fundamentals.vix?.toFixed(1)}`,
-             `변동성: ${(aiAnalysisResult.technicalIndicators?.volatility * 100).toFixed(2)}%`]
-          : []
-      };
+      // 실시간 분석 결과
+      if (aiAnalysisResult.type === 'realtime' && aiAnalysisResult.buySignal) {
+        const signal = aiAnalysisResult.buySignal;
+        return {
+          recommendation: signal.recommendation || '분석 중',
+          confidence: `${(signal.confidence * 100).toFixed(1)}%`,
+          signalScore: signal.signalScore,
+          analysis: `🔴 실시간 AI 분석: 신호 점수 ${signal.signalScore?.toFixed(1)}/100`,
+          keyPoints: [
+            `📊 모멘텀(20일): ${signal.technicalIndicators?.momentum20d?.toFixed(2) || 'N/A'}%`,
+            `📈 변동성(20일): ${signal.technicalIndicators?.volatility?.toFixed(2) || 'N/A'}%`,
+            signal.shouldBuy ? '✅ 매수 추천' : '⏸️ 대기 추천'
+          ],
+          riskFactors: signal.fundamentals ? [
+            `VIX: ${signal.fundamentals.vix?.toFixed(1)}`,
+            `P/E: ${signal.fundamentals.peRatio?.toFixed(1)}`,
+            `52주 고점 대비: ${(signal.fundamentals.ratio52wHigh * 100).toFixed(1)}%`
+          ] : [],
+          isRealtime: true,
+          lastUpdate: aiAnalysisResult.timestamp
+        };
+      }
+      // 수동 분석 결과
+      else {
+        return {
+          recommendation: aiAnalysisResult.recommendation || '분석 중',
+          confidence: `${(aiAnalysisResult.confidence * 100).toFixed(1)}%`,
+          signalScore: aiAnalysisResult.signalScore,
+          analysis: aiAnalysisResult.type === 'buy' 
+            ? `AI 매수 신호 분석: 신호 점수 ${aiAnalysisResult.signalScore?.toFixed(1)}/100`
+            : `AI 매도 신호 분석: 신호 점수 ${aiAnalysisResult.signalScore?.toFixed(1)}/100`,
+          keyPoints: aiAnalysisResult.buyRecommendation 
+            ? [`신호 강도: ${aiAnalysisResult.buyRecommendation.signal_strength}`,
+               `리스크 수준: ${aiAnalysisResult.buyRecommendation.risk_level}`,
+               `추천 포지션: ${aiAnalysisResult.buyRecommendation.suggested_position_size}`]
+            : [],
+          riskFactors: aiAnalysisResult.fundamentals 
+            ? [`VIX: ${aiAnalysisResult.fundamentals.vix?.toFixed(1)}`,
+               `변동성: ${(aiAnalysisResult.technicalIndicators?.volatility * 100).toFixed(2)}%`]
+            : [],
+          isRealtime: false
+        };
+      }
     }
     
     // AI 분석 결과가 없으면 기본 메시지
     return {
-      recommendation: '분석 대기',
+      recommendation: '실시간 분석 대기',
       confidence: '0%',
       signalScore: 0,
-      analysis: '매수 또는 매도 버튼을 클릭하여 AI 분석을 시작하세요.',
-      keyPoints: ['실시간 데이터 기반 분석', 'Yahoo Finance 연동', 'AI 모델 예측'],
-      riskFactors: ['시장 변동성 확인 필요']
+      analysis: '🔄 실시간 AI 분석이 자동으로 시작됩니다...',
+      keyPoints: ['실시간 데이터 기반 분석', 'Yahoo Finance 연동', '5초마다 자동 업데이트'],
+      riskFactors: ['시장 변동성 확인 필요'],
+      isRealtime: false
     };
   };
 
@@ -192,51 +239,85 @@ const MockInvestment = ({ user }) => {
     // stockData는 { symbol, price, change } 형태
     console.log('선택된 주식 데이터:', stockData);
     setCurrentStockData(stockData);
+    
+    // 실시간 AI 분석 트리거 (자동)
+    if (aiInitialized && stockData && stockData.symbol) {
+      triggerRealtimeAIAnalysis(stockData.symbol);
+    }
   };
   
-  // 매수 버튼 핸들러
+  // 실시간 AI 분석 함수 (백그라운드 자동 실행)
+  const triggerRealtimeAIAnalysis = async (symbol) => {
+    // 이미 분석 중이면 스킵
+    if (isAnalyzing) return;
+    
+    try {
+      console.log(`🤖 실시간 AI 분석 시작: ${symbol}`);
+      
+      // 병렬로 매수/매도 신호 분석
+      const [buyAnalysis, sellAnalysis] = await Promise.allSettled([
+        // 매수 신호 분석
+        aiTradingService.analyzeBuySignal(symbol, 5.0),
+        // 매도 신호 분석 (임시 데이터 - 실제로는 포트폴리오에서 가져와야 함)
+        aiTradingService.quickPriceCheck ? 
+          aiTradingService.quickPriceCheck(symbol) : 
+          Promise.resolve(null)
+      ]);
+      
+      // 분석 결과 실시간 업데이트
+      if (buyAnalysis.status === 'fulfilled') {
+        const buyResult = buyAnalysis.value;
+        setAiAnalysisResult(prev => ({
+          ...prev,
+          type: 'realtime',
+          ticker: symbol,
+          buySignal: {
+            recommendation: buyResult.recommendation,
+            signalScore: buyResult.signalScore,
+            confidence: buyResult.confidence,
+            shouldBuy: buyResult.shouldBuy,
+            technicalIndicators: buyResult.technicalIndicators,
+            fundamentals: buyResult.fundamentals
+          },
+          timestamp: new Date().toISOString()
+        }));
+      }
+      
+      console.log(`✅ 실시간 AI 분석 완료: ${symbol}`);
+    } catch (error) {
+      console.error('실시간 AI 분석 실패:', error);
+    }
+  };
+  
+  // 매수 버튼 핸들러 (실시간 AI 분석 결과 기반)
   const handleBuyClick = async () => {
     if (!aiInitialized) {
       alert('AI 모델이 아직 초기화되지 않았습니다. 잠시 후 다시 시도해주세요.');
       return;
     }
     
-    setIsAnalyzing(true);
-    try {
-      // 이미 선택된 심볼 사용
-      console.log(`매수 분석 시작: ${selectedSymbol} (${selectedStock})`);
-      const result = await aiTradingService.analyzeBuySignal(selectedSymbol, 5.0);
+    // 실시간 분석 결과가 있으면 그것을 사용
+    if (aiAnalysisResult && aiAnalysisResult.type === 'realtime' && aiAnalysisResult.buySignal) {
+      const signal = aiAnalysisResult.buySignal;
       
-      setAiAnalysisResult({
-        type: 'buy',
-        ...result
-      });
+      const confirmBuy = confirm(
+        `🤖 실시간 AI 분석 결과\n\n` +
+        `종목: ${selectedStock} (${selectedSymbol})\n` +
+        `추천: ${signal.recommendation}\n` +
+        `신호 점수: ${signal.signalScore.toFixed(1)}/100\n` +
+        `신뢰도: ${(signal.confidence * 100).toFixed(1)}%\n` +
+        `현재가: $${currentStockData?.price?.toFixed(2) || 'N/A'}\n\n` +
+        `매수를 진행하시겠습니까?`
+      );
       
-      // 매수 추천인 경우 알림
-      if (result.shouldBuy) {
-        const confirmBuy = confirm(
-          `AI 분석 결과: ${result.recommendation}\n` +
-          `신호 점수: ${result.signalScore.toFixed(1)}/100\n` +
-          `신뢰도: ${(result.confidence * 100).toFixed(1)}%\n\n` +
-          `매수를 진행하시겠습니까?`
-        );
-        
-        if (confirmBuy) {
-          // TODO: 실제 매수 로직 구현
-          alert('매수 주문이 접수되었습니다.');
-        }
-      } else {
-        alert(
-          `AI 분석 결과: ${result.recommendation}\n` +
-          `신호 점수: ${result.signalScore.toFixed(1)}/100\n` +
-          `현재는 매수 시점이 아닙니다.`
-        );
+      if (confirmBuy) {
+        // TODO: 실제 매수 로직 구현
+        alert('매수 주문이 접수되었습니다.');
       }
-    } catch (error) {
-      console.error('매수 분석 실패:', error);
-      alert('AI 분석 중 오류가 발생했습니다.');
-    } finally {
-      setIsAnalyzing(false);
+    } else {
+      // 실시간 분석이 없으면 새로 분석 요청
+      alert('실시간 AI 분석 중입니다. 잠시 후 다시 시도해주세요.');
+      await triggerRealtimeAIAnalysis(selectedSymbol);
     }
   };
   
@@ -339,6 +420,20 @@ const MockInvestment = ({ user }) => {
     return '';
   };
 
+  // 포트폴리오 상세 화면 표시
+  if (showPortfolioDetail && selectedPortfolio) {
+    return (
+      <PortfolioDetail 
+        portfolio={selectedPortfolio}
+        user={user}
+        onBack={() => {
+          setShowPortfolioDetail(false);
+          setSelectedPortfolio(null);
+        }}
+      />
+    );
+  }
+  
   // 기존 포트폴리오 목록 화면
   if (!isActiveInvestment) {
     return (
@@ -497,7 +592,22 @@ const MockInvestment = ({ user }) => {
               <div className="recommendation-badge">
                 <span className="recommendation-text">{currentAnalysis.recommendation}</span>
                 <span className="confidence-score">신뢰도: {currentAnalysis.confidence}</span>
+                {currentAnalysis.isRealtime && (
+                  <span style={{
+                    fontSize: '10px',
+                    color: '#00ff00',
+                    marginLeft: '10px',
+                    animation: 'pulse 1s infinite'
+                  }}>
+                    ● LIVE
+                  </span>
+                )}
               </div>
+              {currentAnalysis.lastUpdate && (
+                <div style={{ fontSize: '11px', color: '#888', marginTop: '4px' }}>
+                  마지막 업데이트: {new Date(currentAnalysis.lastUpdate).toLocaleTimeString()}
+                </div>
+              )}
             </div>
             
             <div className="analysis-content">
@@ -552,49 +662,6 @@ const MockInvestment = ({ user }) => {
                 {isAnalyzing ? 'AI 분석 중...' : '매도'}
               </button>
             </div>
-            
-            {/* AI 분석 결과 표시 */}
-            {aiAnalysisResult && (
-              <div className="ai-analysis-result" style={{
-                marginTop: '20px',
-                padding: '15px',
-                backgroundColor: aiAnalysisResult.type === 'buy' 
-                  ? (aiAnalysisResult.shouldBuy ? '#e8f5e9' : '#fff3e0')
-                  : (aiAnalysisResult.shouldSell ? '#ffebee' : '#e3f2fd'),
-                borderRadius: '8px',
-                border: '1px solid #ddd'
-              }}>
-                <h4>🤖 AI 분석 결과</h4>
-                <div style={{ marginTop: '10px' }}>
-                  <p><strong>추천:</strong> {aiAnalysisResult.recommendation}</p>
-                  <p><strong>신호 점수:</strong> {aiAnalysisResult.signalScore?.toFixed(1)}/100</p>
-                  <p><strong>신뢰도:</strong> {(aiAnalysisResult.confidence * 100).toFixed(1)}%</p>
-                  
-                  {aiAnalysisResult.type === 'buy' && aiAnalysisResult.fundamentals && (
-                    <>
-                      <h5 style={{ marginTop: '10px' }}>펀더멘털 지표</h5>
-                      <ul style={{ fontSize: '14px' }}>
-                        <li>P/E: {aiAnalysisResult.fundamentals.peRatio?.toFixed(1)}</li>
-                        <li>P/B: {aiAnalysisResult.fundamentals.pbRatio?.toFixed(1)}</li>
-                        <li>ROE: {(aiAnalysisResult.fundamentals.roe * 100).toFixed(1)}%</li>
-                        <li>VIX: {aiAnalysisResult.fundamentals.vix?.toFixed(1)}</li>
-                      </ul>
-                    </>
-                  )}
-                  
-                  {aiAnalysisResult.type === 'sell' && aiAnalysisResult.performance && (
-                    <>
-                      <h5 style={{ marginTop: '10px' }}>성과 지표</h5>
-                      <ul style={{ fontSize: '14px' }}>
-                        <li>현재 수익률: {aiAnalysisResult.currentReturn}</li>
-                        <li>시장 수익률: {aiAnalysisResult.performance.marketReturn}</li>
-                        <li>초과 수익률: {aiAnalysisResult.performance.excessReturn}</li>
-                      </ul>
-                    </>
-                  )}
-                </div>
-              </div>
-            )}
           </div>
         </div>
       </div>

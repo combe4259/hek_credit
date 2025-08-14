@@ -74,12 +74,12 @@ class AITradingService {
         confidence: data.analysis.confidence,
         shouldBuy: data.analysis.recommendation === 'BUY',
         
-        // 기술적 지표
+        // 기술적 지표 (백엔드에서 "11.15%" 형태로 오므로 파싱)
         technicalIndicators: {
-          momentum5d: parseFloat(data.technical_indicators.momentum_5d),
-          momentum20d: parseFloat(data.technical_indicators.momentum_20d),
-          momentum60d: parseFloat(data.technical_indicators.momentum_60d),
-          volatility: parseFloat(data.technical_indicators.volatility),
+          momentum5d: parseFloat(data.technical_indicators.momentum_5d.replace('%', '')),
+          momentum20d: parseFloat(data.technical_indicators.momentum_20d.replace('%', '')),
+          momentum60d: parseFloat(data.technical_indicators.momentum_60d.replace('%', '')),
+          volatility: parseFloat(data.technical_indicators.volatility.replace('%', '')),
         },
         
         // 펀더멘털 지표
