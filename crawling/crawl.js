@@ -62,7 +62,6 @@ async function fetchWithRetry(page, url, maxRetries = 3, delay = 2000) {
     throw lastError || new Error(`Failed to fetch ${url} after ${maxRetries} attempts with Puppeteer`);
 }
 
-// MongoDB connection
 // MongoDB 연결 설정 (환경변수 또는 설정 파일에서 가져오기)
 const uri = process.env.MONGODB_URI || "mongodb+srv://julk0206:%23Sooyeon2004@hek.yqi7d9x.mongodb.net";
 const client = new MongoClient(uri);
@@ -109,7 +108,7 @@ async function isDuplicate(collection, title, url) {
     });
 
     if (existing) {
-        console.log(`  🔍 중복 상세정보:`);
+        console.log(`중복 상세정보:`);
         console.log(`     - 새 기사: "${title}"`);
         console.log(`     - 기존 기사: "${existing.title}"`);
         console.log(`     - 새 URL: ${url}`);
@@ -200,7 +199,6 @@ async function getDetailContent(browser, url) {
             if (hasContent) {
                 const content = await detailPage.$eval(selector, el => el.innerText.trim());
                 if (content && content.length > 50) {
-
                     console.log(`네이버 통합뷰에서 본문 추출 성공 (${selector})`);
 
                     // 제목 추출
@@ -269,8 +267,7 @@ async function getDetailContent(browser, url) {
         }
 
         // 네이버 통합뷰에서 못 찾은 경우 언론사 사이트 셀렉터로 시도
-
-        console.log('⚠️ 네이버 통합뷰에서 본문을 찾지 못함. 언론사 사이트 시도...');
+        console.log('네이버 통합뷰에서 본문을 찾지 못함. 언론사 사이트 시도.');
         for (const selector of pressSelectors) {
             try {
                 const hasContent = await detailPage.$(selector);
@@ -289,7 +286,7 @@ async function getDetailContent(browser, url) {
                     });
 
                     if (content && content.length > 100) { // 최소 길이를 100자로 증가
-                        console.log(`✅ 언론사 사이트에서 본문 추출 성공 (${selector}) - ${content.length}자`);
+                        console.log(`언론사 사이트에서 본문 추출 성공 (${selector}) - ${content.length}자`);
                         const cleanContent = content
                             .replace(/\s+/g, ' ')
                             .replace(/\[.*?\]/g, '')
@@ -495,13 +492,13 @@ async function crawlAndSave(stockName = "엔비디아", stockSymbol = "NVIDIA") 
                 console.log(`  유효성: 제목=${!!articleData.title}, 링크=${!!articleData.link}, HTTP=${articleData.link?.startsWith('http')}`);
 
                 if (!articleData.title || !articleData.link || !articleData.link.startsWith('http')) {
-                    console.log(`  ⏭️  유효하지 않은 제목/링크가 있어서 스킵`);
+                    console.log(`  유효하지 않은 제목/링크가 있어서 스킵`);
                     continue;
                 }
 
                 const isDup = await isDuplicate(collection, articleData.title, articleData.link);
                 if (isDup) {
-                    console.log(`  ⏭️  중복 뉴스 스킵: "${articleData.title}" | ${articleData.link}`);
+                    console.log(`  중복 뉴스 스킵: "${articleData.title}" | ${articleData.link}`);
                     continue;
                 }
 
@@ -543,7 +540,7 @@ async function crawlAndSave(stockName = "엔비디아", stockSymbol = "NVIDIA") 
                 // 최종 추출된 정보만 출력
                 console.log(`\n[기사 ${i + 1}] ${actualTitle}`);
                 console.log(`  언론사: ${actualPress} | 날짜: ${actualDate}`);
-                console.log(`  수집 완료 ✅`);
+                console.log(`  수집 완료`);
                 newArticlesCount++;
                 totalProcessed++;
 
@@ -724,7 +721,6 @@ async function crawlAllSP500() {
 
 // 실행 부분
 if (require.main === module) {
-    crawlAllSP500();
     // 개별 종목 크롤링 (월간 수집용)
     const targetStock = process.argv[2];
     
