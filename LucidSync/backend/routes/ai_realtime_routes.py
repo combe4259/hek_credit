@@ -1,7 +1,7 @@
 """
 AI Realtime Trading Routes - 실시간 데이터를 사용한 AI 트레이딩 API
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from typing import Optional
 import pandas as pd
@@ -13,6 +13,7 @@ from datetime import datetime
 # 서비스 import
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from services.market_data_service import market_data_service
+from services.news_sentiment_service import news_sentiment_service
 
 # AI 모델 경로 추가
 model_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../generate_data/models'))
@@ -47,6 +48,20 @@ class TradeQualityRequest(BaseModel):
     symbol: str
     entryPrice: float
     exitPrice: float
+
+class NewsSentimentRequest(BaseModel):
+    """뉴스 감정 분석 요청"""
+    stock_name: str
+    max_days: Optional[int] = 14
+
+class SingleNewsAnalysisRequest(BaseModel):
+    """개별 뉴스 분석 요청"""
+    original_stock: str
+    content: str
+    news_date: Optional[str] = None
+    positive: Optional[float] = 0.5
+    negative: Optional[float] = 0.3
+    neutral: Optional[float] = 0.2
     entryDate: str  # YYYY-MM-DD format
     exitDate: str   # YYYY-MM-DD format
     quantity: float
@@ -275,7 +290,7 @@ async def analyze_buy_signal(request: RealtimeBuyRequest):
         print(f"Analyzing buy signal for {request.ticker}...")
         result = trading_service.get_buy_signals(
             candidate_data=df,
-            threshold=60.0,  # 60점 이상이면 매수 추천
+            threshold=50.0,  # 50점 이상이면 매수 추천
             verbose=True
         )
         
@@ -285,9 +300,9 @@ async def analyze_buy_signal(request: RealtimeBuyRequest):
             "current_price": market_data['current_price'],
             "analysis": {
                 "signal_score": result['summary']['avg_signal'],
-                "recommendation": "BUY" if result['summary']['avg_signal'] >= 60 else "HOLD",
+                "recommendation": "BUY" if result['summary']['avg_signal'] >= 50 else "WAIT",
                 "confidence": result['summary']['avg_signal'] / 100,
-                "threshold": 60.0
+                "threshold": 50.0
             },
             "market_data": {
                 "pe_ratio": market_data['entry_pe_ratio'],
@@ -308,7 +323,7 @@ async def analyze_buy_signal(request: RealtimeBuyRequest):
         }
         
         # 매수 추천인 경우 추가 정보
-        if result['summary']['avg_signal'] >= 60:
+        if result['summary']['avg_signal'] >= 50:
             response["buy_recommendation"] = {
                 "suggested_position_size": f"{request.position_size_pct}%",
                 "signal_strength": "Strong" if result['summary']['avg_signal'] >= 80 else "Moderate",
@@ -651,6 +666,54 @@ def _generate_feedback_summary(feedback_result):
     }
     
     try:
+        # SHAP 분석에서 가장 좋았던/안 좋았던 요인 찾기
+        best_factor = None
+        worst_factor = None
+        best_contribution = float('-inf')
+        worst_contribution = float('inf')
+        
+        if 'shap_analysis' in feedback_result:
+            shap_data = feedback_result['shap_analysis']
+            
+            # 모든 모델의 기여도를 합쳐서 최고/최악 요인 찾기
+            for model_type, analysis in shap_data.items():
+                if 'top_contributors' in analysis and analysis['top_contributors']:
+                    for contributor in analysis['top_contributors']:
+                        contribution = contributor.get('contribution', 0)
+                        feature_name = contributor.get('feature', '').replace('_', ' ')
+                        
+                        if contribution > best_contribution:
+                            best_contribution = contribution
+                            best_factor = {
+                                'name': feature_name,
+                                'contribution': contribution,
+                                'model': model_type.replace('_shap', '').upper()
+                            }
+                        
+                        if contribution < worst_contribution:
+                            worst_contribution = contribution
+                            worst_factor = {
+                                'name': feature_name,
+                                'contribution': contribution,
+                                'model': model_type.replace('_shap', '').upper()
+                            }
+        
+        # SHAP 기반 전체 평가 생성
+        if best_factor and worst_factor:
+            if abs(best_contribution) > abs(worst_contribution):
+                # 긍정적 요인이 더 강함
+                summary["overall_assessment"] = f"'{best_factor['name']}'이(가) {best_factor['model']} 모델에서 +{best_contribution:.1f}점으로 가장 큰 도움이 되었습니다."
+            else:
+                # 부정적 요인이 더 강함
+                summary["overall_assessment"] = f"'{worst_factor['name']}'이(가) {worst_factor['model']} 모델에서 {worst_contribution:.1f}점으로 가장 큰 악영향을 미쳤습니다."
+        
+        # 데이터 기반 평가가 있으면 우선 사용
+        if 'data_driven_evaluation' in feedback_result:
+            eval_data = feedback_result['data_driven_evaluation']
+            if 'performance_ranking' in eval_data:
+                perf = eval_data['performance_ranking']
+                summary["overall_assessment"] = f"실제 성과가 {perf['rank_description']}을 기록했습니다."
+        
         # 적응적 인사이트에서 핵심 내용 추출
         if 'adaptive_insights' in feedback_result:
             insights = feedback_result['adaptive_insights']
@@ -662,13 +725,6 @@ def _generate_feedback_summary(feedback_result):
             opportunities = feedback_result['learning_opportunities']
             for opp in opportunities[:2]:  # 상위 2개만
                 summary["recommendations"].append(opp['learning'])
-        
-        # 전체 평가
-        if 'data_driven_evaluation' in feedback_result:
-            eval_data = feedback_result['data_driven_evaluation']
-            if 'performance_ranking' in eval_data:
-                perf = eval_data['performance_ranking']
-                summary["overall_assessment"] = f"실제 성과가 {perf['rank_description']}을 기록했습니다."
     
     except Exception as e:
         print(f"피드백 요약 생성 중 오류: {str(e)}")
@@ -772,3 +828,101 @@ def _generate_basic_feedback(trade_data):
             'error': f'기본 피드백 생성 실패: {str(e)}',
             'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }
+
+# ===== 뉴스 감정 분석 엔드포인트 =====
+
+class NewsSentimentRequest(BaseModel):
+    """뉴스 감정 분석 요청"""
+    stock_name: str
+    limit: Optional[int] = 5
+
+class StockAggregateRequest(BaseModel):
+    """종목 종합 감정 분석 요청"""
+    stock_name: str
+    max_days: Optional[int] = 14
+
+@router.get("/news-sentiment/{stock_name}")
+async def get_stock_news_sentiment(request: Request, stock_name: str, limit: int = 5):
+    """종목별 최신 뉴스와 감정 분석 결과 조회"""
+    try:
+        # 앱에서 미리 로드된 뉴스 서비스 사용
+        news_service = getattr(request.app.state, 'news_service', None)
+        if news_service is None:
+            # 백업: 기존 방식 사용
+            if not news_sentiment_service.model_loaded:
+                news_sentiment_service.load_model()
+            news_service = news_sentiment_service
+        
+        # 최신 뉴스와 감정 분석 결과 조회
+        news_with_sentiment = news_service.get_latest_news_with_sentiment(stock_name, limit)
+        
+        return {
+            'status': 'success',
+            'stock_name': stock_name,
+            'news_count': len(news_with_sentiment),
+            'news_analysis': news_with_sentiment,
+            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"뉴스 감정 분석 실패: {str(e)}")
+
+@router.get("/news-sentiment/aggregate/{stock_name}")
+async def get_stock_aggregate_sentiment(request: Request, stock_name: str, max_days: int = 14):
+    """종목별 종합 감정 점수 조회"""
+    try:
+        # 앱에서 미리 로드된 뉴스 서비스 사용
+        news_service = getattr(request.app.state, 'news_service', None)
+        if news_service is None:
+            # 백업: 기존 방식 사용
+            if not news_sentiment_service.model_loaded:
+                news_sentiment_service.load_model()
+            news_service = news_sentiment_service
+        
+        # 종목 종합 감정 분석
+        aggregate_result = news_service.analyze_stock_aggregate_sentiment(stock_name, max_days)
+        
+        if 'error' in aggregate_result:
+            return {
+                'status': 'error',
+                'message': aggregate_result['error'],
+                'stock_name': stock_name,
+                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }
+        
+        return {
+            'status': 'success',
+            'stock_name': stock_name,
+            'aggregate_analysis': aggregate_result,
+            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"종합 감정 분석 실패: {str(e)}")
+
+@router.post("/news-sentiment/analyze")
+async def analyze_single_news(request: dict):
+    """개별 뉴스 감정 분석"""
+    try:
+        # 뉴스 감정 분석 서비스 초기화
+        if not news_sentiment_service.model_loaded:
+            news_sentiment_service.load_model()
+        
+        # 개별 뉴스 분석
+        analysis_result = news_sentiment_service.analyze_single_news(request)
+        
+        if 'error' in analysis_result:
+            return {
+                'status': 'error',
+                'message': analysis_result['error'],
+                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }
+        
+        return {
+            'status': 'success',
+            'analysis': analysis_result,
+            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"뉴스 감정 분석 실패: {str(e)}")

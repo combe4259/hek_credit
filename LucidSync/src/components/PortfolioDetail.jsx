@@ -232,7 +232,7 @@ const PortfolioDetail = ({ portfolio, user, onBack }) => {
     if (isAnalyzing) return;
     
     try {
-      console.log(`🤖 포트폴리오 실시간 AI 분석 시작: ${symbol}`);
+      console.log(` 포트폴리오 실시간 매수 분석 시작: ${symbol}`);
       
       // 매수 신호 분석
       const buyAnalysisResult = await aiTradingService.analyzeBuySignal(symbol, 5.0);
@@ -261,7 +261,7 @@ const PortfolioDetail = ({ portfolio, user, onBack }) => {
   // 보유 종목 실시간 매도 분석 함수
   const triggerHoldingSellAnalysis = async (holding) => {
     try {
-      console.log(`🤖 보유 종목 실시간 매도 분석: ${holding.symbol}`);
+      console.log(` 보유 종목 실시간 매도 분석: ${holding.symbol}`);
       
       const result = await aiTradingService.analyzeSellSignal(
         holding.symbol,
@@ -442,7 +442,7 @@ const PortfolioDetail = ({ portfolio, user, onBack }) => {
       };
 
       // 3. trade_feedback_service API 호출
-      console.log('🤖 AI 거래 피드백 분석 시작:', feedbackData);
+      console.log(' AI 거래 피드백 분석 시작:', feedbackData);
       const response = await fetch('http://localhost:8000/api/ai/realtime/trade-feedback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -547,14 +547,14 @@ const PortfolioDetail = ({ portfolio, user, onBack }) => {
   // 개별 거래 품질 평가
   const evaluateTradeQuality = async (tradePair) => {
     try {
-      console.log(`🤖 거래 품질 평가 시작: ${tradePair.symbol}`);
+      console.log(` 거래 품질 평가 시작: ${tradePair.symbol}`);
       
       // 1. 진입시점 데이터 수집 (WebSocket/Yahoo Finance)
-      console.log(`📊 진입시점 데이터 수집: ${tradePair.entryDate}`);
+      console.log(` 진입시점 데이터 수집: ${tradePair.entryDate}`);
       const entryData = await fetchHistoricalMarketData(tradePair.symbol, tradePair.entryDate);
       
       // 2. 청산시점 데이터 수집 (WebSocket/Yahoo Finance)  
-      console.log(`📊 청산시점 데이터 수집: ${tradePair.exitDate}`);
+      console.log(` 청산시점 데이터 수집: ${tradePair.exitDate}`);
       const exitData = await fetchHistoricalMarketData(tradePair.symbol, tradePair.exitDate);
       
       // 3. 시장 수익률 및 초과 수익률 계산
@@ -894,7 +894,7 @@ const PortfolioDetail = ({ portfolio, user, onBack }) => {
                           {sellAnalysisResult ? (
                             <div className="realtime-sell-analysis">
                               <div className="sell-analysis-header">
-                                <h6>🤖 실시간 매도 분석</h6>
+                                <h6> 실시간 매도 분석</h6>
                                 <span className="live-indicator">● LIVE</span>
                               </div>
                               <div className="sell-analysis-summary">
@@ -925,7 +925,7 @@ const PortfolioDetail = ({ portfolio, user, onBack }) => {
                             </div>
                           ) : (
                             <div className="sell-analysis-waiting">
-                              <p>🔄 실시간 매도 분석 준비 중...</p>
+                              <p> 실시간 매도 분석 준비 중...</p>
                             </div>
                           )}
                         
@@ -963,7 +963,7 @@ const PortfolioDetail = ({ portfolio, user, onBack }) => {
                             onClick={() => {
                               if (sellAnalysisResult?.shouldSell) {
                                 const confirmSell = confirm(
-                                  `🤖 실시간 AI 매도 분석 결과\n\n` +
+                                  ` 실시간 AI 매도 분석 결과\n\n` +
                                   `종목: ${holding.symbol}\n` +
                                   `현재 수익률: ${sellAnalysisResult.currentReturn}\n` +
                                   `추천: ${sellAnalysisResult.recommendation}\n` +
@@ -1050,7 +1050,7 @@ const PortfolioDetail = ({ portfolio, user, onBack }) => {
                                 {evaluation ? (
                                   <div className="ai-quality-evaluation">
                                     <div className="quality-header">
-                                      <h5>🤖 AI 거래 품질 평가</h5>
+                                      <h5> AI 거래 품질 평가</h5>
                                       <span className="quality-score">
                                         {evaluation.qualityScore?.toFixed(1) || 'N/A'}/100점
                                       </span>
@@ -1084,7 +1084,7 @@ const PortfolioDetail = ({ portfolio, user, onBack }) => {
                                   </div>
                                 ) : (
                                   <div className="quality-loading">
-                                    <p>🔄 AI 품질 평가 중...</p>
+                                    <p> AI 품질 평가 중...</p>
                                   </div>
                                 )}
 
@@ -1149,15 +1149,26 @@ const PortfolioDetail = ({ portfolio, user, onBack }) => {
                                           {/* SHAP 분석 결과 (상위 기여 요인) */}
                                           {tradeFeedbacks[tradePair.id].shap_analysis && (
                                             <div className="feedback-shap">
-                                              <strong>🔍 모델 의사결정 요인:</strong>
+                                              <strong>모델 의사결정 요인 분석:</strong>
                                               {Object.entries(tradeFeedbacks[tradePair.id].shap_analysis).map(([modelType, analysis]) => {
                                                 if (analysis.error || !analysis.top_contributors) return null;
                                                 return (
-                                                  <div key={modelType} className="shap-model">
-                                                    <span className="model-name">{modelType.replace('_shap', '').toUpperCase()}:</span>
-                                                    <span className="top-factors">
-                                                      {analysis.top_contributors.slice(0, 2).map(factor => factor.feature.replace(/_/g, ' ')).join(', ')}
-                                                    </span>
+                                                  <div key={modelType} className="shap-model-detailed">
+                                                    <div className="model-header">
+                                                      <span className="model-name">{modelType.replace('_shap', '').toUpperCase()}</span>
+                                                      <span className="model-prediction">예측: {analysis.prediction?.toFixed(1)}점</span>
+                                                    </div>
+                                                    <div className="top-contributors">
+                                                      {analysis.top_contributors.slice(0, 3).map((factor, index) => (
+                                                        <div key={index} className="contributor">
+                                                          <span className="factor-name">{factor.feature.replace(/_/g, ' ')}</span>
+                                                          <span className="factor-value">값: {factor.actual_value}</span>
+                                                          <span className={`factor-contribution ${factor.contribution >= 0 ? 'positive' : 'negative'}`}>
+                                                            {factor.contribution >= 0 ? '+' : ''}{factor.contribution.toFixed(1)}점
+                                                          </span>
+                                                        </div>
+                                                      ))}
+                                                    </div>
                                                   </div>
                                                 );
                                               })}
@@ -1173,7 +1184,7 @@ const PortfolioDetail = ({ portfolio, user, onBack }) => {
                                   ) : feedbackLoading[tradePair.id] ? (
                                     // 피드백 생성 중인 경우
                                     <div className="feedback-loading">
-                                      <p>🔄 AI 거래 피드백 생성 중...</p>
+                                      <p>AI 거래 피드백 생성 중...</p>
                                     </div>
                                   ) : (
                                     // 피드백 생성 버튼
@@ -1209,7 +1220,7 @@ const PortfolioDetail = ({ portfolio, user, onBack }) => {
                                 {/* 거래 피드백 상태 */}
                                 {tradePair.sellTransaction.feedbackSent && (
                                   <div className="feedback-status">
-                                    ✅ AI 학습 데이터 전송 완료
+
                                   </div>
                                 )}
                               </div>
@@ -1285,7 +1296,7 @@ const PortfolioDetail = ({ portfolio, user, onBack }) => {
                     {realtimeAnalysis && realtimeAnalysis.buySignal ? (
                       <div className="realtime-analysis">
                         <div className="analysis-header">
-                          <h5>🤖 실시간 AI 분석</h5>
+                          <h5> 실시간 AI 분석</h5>
                           <span className="live-indicator">● LIVE</span>
                         </div>
                         <div className="analysis-summary">
@@ -1314,7 +1325,7 @@ const PortfolioDetail = ({ portfolio, user, onBack }) => {
                       </div>
                     ) : (
                       <div className="analysis-waiting">
-                        <p>🔄 실시간 AI 분석 준비 중...</p>
+                        <p> 실시간 AI 분석 준비 중...</p>
                       </div>
                     )}
 
@@ -1324,7 +1335,7 @@ const PortfolioDetail = ({ portfolio, user, onBack }) => {
                         onClick={() => {
                           if (realtimeAnalysis?.buySignal) {
                             const confirmBuy = confirm(
-                              `🤖 실시간 AI 분석 결과\n\n` +
+                              ` 실시간 AI 분석 결과\n\n` +
                               `종목: ${selectedStock} (${selectedSymbol})\n` +
                               `추천: ${realtimeAnalysis.buySignal.recommendation}\n` +
                               `신호 점수: ${realtimeAnalysis.buySignal.signalScore.toFixed(1)}/100\n` +

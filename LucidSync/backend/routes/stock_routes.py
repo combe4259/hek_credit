@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Query, HTTPException
 from typing import List, Dict, Any, Optional
 from datetime import datetime, date
-from backend.services.stock_service import get_stocks_list
-from backend.schemas.stock_schema import StockItem
+from services.stock_service import get_stocks_list
+from schemas.stock_schema import StockItem
 import yfinance as yf
 import pandas as pd
 

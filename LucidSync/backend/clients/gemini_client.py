@@ -1,5 +1,5 @@
 import google.generativeai as genai
-from backend.core.settings import settings
+from core.settings import settings
 
 # 초기화 1회
 genai.configure(api_key=settings.google_api_key)

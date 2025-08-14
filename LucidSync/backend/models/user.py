@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import Integer, String, DateTime, func
-from backend.dependies.db_mysql import Base
+from dependies.db_mysql import Base
 
 class User(Base):
     __tablename__ = "users"

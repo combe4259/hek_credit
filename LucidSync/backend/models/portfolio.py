@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, func
 from sqlalchemy.orm import relationship
-from backend.dependies.db_mysql import Base
+from dependies.db_mysql import Base
 
 class Portfolio(Base):
     __tablename__ = "portfolios"

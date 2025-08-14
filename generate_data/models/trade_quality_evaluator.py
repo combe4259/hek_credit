@@ -201,7 +201,6 @@ class TradeQualityEvaluator:
         ]
         available_features.extend([col for col in entry_features if col in df.columns])
         
-=
         exit_features = [
             'exit_momentum_5d', 'exit_momentum_20d', 'exit_momentum_60d',
             'exit_ma_dev_5d', 'exit_ma_dev_20d', 'exit_ma_dev_60d',
@@ -210,7 +209,6 @@ class TradeQualityEvaluator:
         ]
         available_features.extend([col for col in exit_features if col in df.columns])
         
-=
         change_features = [
             'change_momentum_5d', 'change_momentum_20d', 'change_momentum_60d',
             'change_ma_dev_5d', 'change_ma_dev_20d', 'change_ma_dev_60d',
@@ -219,7 +217,6 @@ class TradeQualityEvaluator:
         ]
         available_features.extend([col for col in change_features if col in df.columns])
         
-=
         market_features = [
             'market_return_during_holding',
             'excess_return'

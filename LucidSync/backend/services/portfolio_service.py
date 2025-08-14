@@ -2,10 +2,10 @@ from typing import List
 from sqlalchemy import select, delete
 from sqlalchemy.orm import Session
 
-from backend.models.portfolio import Portfolio
+from models.portfolio import Portfolio
 
 # (선택) 포트폴리오 하위 테이블이 있으면 여기에 import 해서 같이 삭제 처리
-# from backend.models.portfolio_stock import PortfolioStock
+# from models.portfolio_stock import PortfolioStock
 
 def list_portfolios(db: Session, user_id: int | None = None) -> List[Portfolio]:
     """

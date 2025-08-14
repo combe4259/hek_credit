@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
-from backend.schemas.gemini_schema import PromptIn, TextOut, JSONOut
-from backend.services.gemini_service import ask_gemini_service, ask_gemini_json_service
+from schemas.gemini_schema import PromptIn, TextOut, JSONOut
+from services.gemini_service import ask_gemini_service, ask_gemini_json_service
 
 router = APIRouter(prefix="/ai", tags=["AI"])
 

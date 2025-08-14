@@ -597,6 +597,10 @@
   min-height: 600px;
 }
 
+.ai-analysis-section .content-card {
+  border: 2px solid #F2F219;
+}
+
 .news-section {
   min-height: 600px;
 }
@@ -2132,7 +2136,7 @@
 /* 실시간 AI 분석 스타일 */
 .realtime-analysis {
   background: linear-gradient(135deg, #1E1E22 0%, #2F2F3B 100%);
-  border: 2px solid #4CAF50;
+  border: 2px solid #F2F219;
   border-radius: 8px;
   padding: 15px;
   margin: 15px 0;
@@ -2146,7 +2150,7 @@
 }
 
 .analysis-header h5 {
-  color: #4CAF50;
+  color: #F2F219;
   margin: 0;
   font-size: 1rem;
 }
@@ -2238,7 +2242,7 @@
 /* 실시간 매도 분석 스타일 */
 .realtime-sell-analysis {
   background: linear-gradient(135deg, #2F2F3B 0%, #1E1E22 100%);
-  border: 2px solid #FF9800;
+  border: 2px solid #F2F219;
   border-radius: 8px;
   padding: 12px;
   margin: 10px 0;
@@ -2252,7 +2256,7 @@
 }
 
 .sell-analysis-header h6 {
-  color: #FF9800;
+  color: #F2F219;
   margin: 0;
   font-size: 0.9rem;
 }
@@ -2383,7 +2387,7 @@
 
 .ai-quality-evaluation {
   background: linear-gradient(135deg, #1E1E22 0%, #2F2F3B 100%);
-  border: 2px solid #9C27B0;
+  border: 2px solid #F2F219;
   border-radius: 8px;
   padding: 15px;
   margin: 15px 0;
@@ -2397,7 +2401,7 @@
 }
 
 .quality-header h5 {
-  color: #9C27B0;
+  color: #F2F219;
   margin: 0;
   font-size: 1rem;
 }
@@ -2451,9 +2455,9 @@
 .trade-feedback-section {
   margin-top: 20px;
   padding: 15px;
-  background: linear-gradient(135deg, #2a2d47 0%, #1e3a3a 100%);
+  background: linear-gradient(135deg, #2F2F3B 0%, #1E1E22 100%);
   border-radius: 12px;
-  border: 1px solid #404040;
+  border: 2px solid #F2F219;
 }
 
 .feedback-header {
@@ -2794,5 +2798,350 @@
   .pair-result {
     text-align: left;
   }
+}
+
+/* ========================
+   상세 SHAP 분석 스타일
+   ======================== */
+
+.shap-model-detailed {
+  background: rgba(242, 242, 25, 0.05);
+  border: 1px solid rgba(242, 242, 25, 0.2);
+  border-radius: 8px;
+  padding: 12px;
+  margin: 10px 0;
+}
+
+.model-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(242, 242, 25, 0.2);
+}
+
+.model-name {
+  font-weight: 600;
+  color: #F2F219;
+  font-size: 14px;
+}
+
+.model-prediction {
+  font-size: 12px;
+  color: #CCCCCC;
+  background: rgba(242, 242, 25, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.top-contributors {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.contributor {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 8px;
+  background: rgba(47, 47, 59, 0.5);
+  border-radius: 6px;
+  border-left: 3px solid rgba(242, 242, 25, 0.3);
+}
+
+.factor-name {
+  font-size: 12px;
+  color: #FFFFFF;
+  font-weight: 500;
+  flex: 1;
+  text-transform: capitalize;
+}
+
+.factor-value {
+  font-size: 11px;
+  color: #AAAAAA;
+  margin: 0 8px;
+  background: rgba(30, 30, 34, 0.7);
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.factor-contribution {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  min-width: 50px;
+  text-align: center;
+}
+
+.factor-contribution.positive {
+  background: rgba(76, 175, 80, 0.2);
+  color: #4CAF50;
+  border: 1px solid rgba(76, 175, 80, 0.3);
+}
+
+.factor-contribution.negative {
+  background: rgba(244, 67, 54, 0.2);
+  color: #F44336;
+  border: 1px solid rgba(244, 67, 54, 0.3);
+}
+
+/* ========================
+   뉴스 감정 분석 스타일
+   ======================== */
+
+.news-aggregate-section {
+  background: rgba(242, 242, 25, 0.08);
+  border-radius: 6px;
+  padding: 12px;
+  margin-bottom: 15px;
+}
+
+.aggregate-score {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.score-label {
+  font-weight: 600;
+  color: #FFFFFF;
+}
+
+.score-value {
+  font-weight: bold;
+  font-size: 16px;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.score-value.positive {
+  color: #4CAF50;
+  background: rgba(76, 175, 80, 0.15);
+}
+
+.score-value.negative {
+  color: #F44336;
+  background: rgba(244, 67, 54, 0.15);
+}
+
+.score-value.neutral {
+  color: #FF9800;
+  background: rgba(255, 152, 0, 0.15);
+}
+
+.prediction-badge {
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  background: rgba(242, 242, 25, 0.2);
+  color: #1E1E22;
+}
+
+.news-breakdown {
+  display: flex;
+  gap: 15px;
+  font-size: 12px;
+  color: #CCCCCC;
+}
+
+.news-breakdown span {
+  padding: 2px 6px;
+  background: rgba(47, 47, 59, 0.5);
+  border-radius: 3px;
+}
+
+.individual-news-section {
+  margin-top: 15px;
+}
+
+.individual-news-section h6 {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  color: #FFFFFF;
+  font-weight: 600;
+}
+
+.news-list {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.news-item {
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(242, 242, 25, 0.1);
+}
+
+.news-item:last-child {
+  border-bottom: none;
+}
+
+.news-title {
+  font-size: 12px;
+  color: #FFFFFF;
+  margin-bottom: 4px;
+  line-height: 1.3;
+}
+
+.news-sentiment {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sentiment-score {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.sentiment-score.positive {
+  color: #4CAF50;
+  background: rgba(76, 175, 80, 0.15);
+}
+
+.sentiment-score.negative {
+  color: #F44336;
+  background: rgba(244, 67, 54, 0.15);
+}
+
+.sentiment-score.neutral {
+  color: #FF9800;
+  background: rgba(255, 152, 0, 0.15);
+}
+
+.sentiment-prediction {
+  font-size: 11px;
+  color: #CCCCCC;
+  font-weight: 500;
+}
+
+.loading-indicator {
+  text-align: center;
+  color: #CCCCCC;
+  font-style: italic;
+  padding: 20px;
+}
+
+.no-news-data {
+  text-align: center;
+  color: #999999;
+  font-style: italic;
+  padding: 15px;
+}
+
+/* 추가된 뉴스 감정 분석 스타일 */
+.loading-message {
+  text-align: center;
+  padding: 20px;
+  color: #6b7280;
+  font-style: italic;
+}
+
+.no-news-message {
+  text-align: center;
+  padding: 20px;
+  color: #9ca3af;
+  font-style: italic;
+}
+
+.aggregate-sentiment {
+  margin-bottom: 20px;
+  background: linear-gradient(135deg, #2F2F3B 0%, #1E1E22 100%);
+  border-left: 4px solid #F2F219;
+}
+
+.aggregate-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 15px;
+  align-items: center;
+}
+
+.aggregate-score {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.score-label {
+  font-weight: 600;
+  color: #DCDCDC;
+}
+
+.score-value {
+  font-weight: 700;
+  font-size: 1.1em;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.score-value.positive {
+  background-color: rgba(76, 175, 80, 0.15);
+  color: #4CAF50;
+}
+
+.score-value.negative {
+  background-color: rgba(244, 67, 54, 0.15);
+  color: #F44336;
+}
+
+.news-count, .sentiment-trend {
+  font-size: 0.9em;
+  color: #CCCCCC;
+}
+
+/* 예측 배지 스타일 */
+.prediction-badge {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.7em;
+  font-weight: 600;
+  margin-left: 6px;
+  text-transform: uppercase;
+}
+
+.prediction-badge.positive {
+  background-color: rgba(34, 197, 94, 0.2);
+  color: #22c55e;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.prediction-badge.negative {
+  background-color: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.prediction-badge.neutral {
+  background-color: rgba(156, 163, 175, 0.2);
+  color: #9ca3af;
+  border: 1px solid rgba(156, 163, 175, 0.3);
+}
+
+/* 뉴스 제목 링크 스타일 */
+.news-title-link {
+  color: inherit;
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.news-title-link:hover {
+  color: #F2F219;
+  text-decoration: underline;
+}
+
+.news-title-link:visited {
+  color: inherit;
+}
+
+.news-title-link:active {
+  color: #FFDB2A;
 }
 

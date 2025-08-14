@@ -2,11 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import Optional
 
-from backend.dependies.db_mysql import get_db
-from backend.models.portfolio import Portfolio
+from dependies.db_mysql import get_db
+from models.portfolio import Portfolio
 from pydantic import BaseModel, Field
-from backend.schemas.portfolio_schema import PortfolioName, PortfolioOut, PortfolioListOut
-from backend.services.portfolio_service import list_portfolios, delete_portfolio
+from schemas.portfolio_schema import PortfolioName, PortfolioOut, PortfolioListOut
+from services.portfolio_service import list_portfolios, delete_portfolio
 
 router = APIRouter(prefix="/portfolios", tags=["Portfolios"])
 
