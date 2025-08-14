@@ -8,7 +8,7 @@ import lightgbm as lgb
 import xgboost as xgb
 import catboost as cb
 from sklearn.model_selection import TimeSeriesSplit
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, r2_score
 from sklearn.preprocessing import RobustScaler
 from sklearn.decomposition import PCA
 from sklearn.linear_model import LogisticRegression
@@ -156,10 +156,42 @@ class NewsScorer:
         df_sorted['news_frequency_cumulative'] = df_sorted.groupby('original_stock').cumcount() + 1
         feature_parts.append(df_sorted[['days_since_last_news', 'news_frequency_cumulative']].reindex(df_copy.index))
 
-        # 7. 과거 주가 정보
+        # 7. 과거 주가 정보 (다중 기간 모멘텀) - 데이터 누수 방지
         if 'price_at_news_time' in df_copy.columns:
-            df_sorted['return_5d_before_news'] = df_sorted.groupby('original_stock')['price_at_news_time'].pct_change(periods=5).fillna(0)
-            feature_parts.append(df_sorted[['return_5d_before_news']].reindex(df_copy.index))
+            momentum_df = pd.DataFrame(index=df_copy.index)
+            
+            # 각 뉴스별로 개별적으로 모멘텀 계산 (데이터 누수 방지)
+            for idx, row in df_copy.iterrows():
+                stock_name = row['original_stock'].strip('$')
+                ticker = self.name_to_ticker_map.get(stock_name)
+                news_date = pd.to_datetime(row['news_date'])
+                
+                if ticker:
+                    try:
+                        # 뉴스 발생 전 30일간의 주가 데이터 확보
+                        stock_data = self._get_stock_data(ticker, news_date - timedelta(days=30), news_date)
+                        if stock_data is not None and len(stock_data) >= 20:
+                            # 뉴스 발생 시점 기준으로 과거 모멘텀 계산
+                            news_price = self._get_price_at_time(stock_data, news_date)
+                            
+                            if news_price:
+                                # 1일 전 가격과 비교
+                                price_1d = self._get_price_at_time(stock_data, news_date - timedelta(days=1))
+                                momentum_df.loc[idx, 'return_1d_before_news'] = (news_price - price_1d) / price_1d if price_1d else 0
+                                
+                                # 5일 전 가격과 비교  
+                                price_5d = self._get_price_at_time(stock_data, news_date - timedelta(days=5))
+                                momentum_df.loc[idx, 'return_5d_before_news'] = (news_price - price_5d) / price_5d if price_5d else 0
+                                
+                                # 20일 전 가격과 비교
+                                price_20d = self._get_price_at_time(stock_data, news_date - timedelta(days=20))
+                                momentum_df.loc[idx, 'return_20d_before_news'] = (news_price - price_20d) / price_20d if price_20d else 0
+                    except Exception:
+                        pass
+            
+            # 결측값을 0으로 채움
+            momentum_df = momentum_df.fillna(0)
+            feature_parts.append(momentum_df)
 
         # 8. 상호작용 피처
         interaction_df = pd.DataFrame(index=df_copy.index)
@@ -205,11 +237,29 @@ class NewsScorer:
         y = df_with_targets['direction_24h'].astype(int)
         
         def objective(trial):
-            lgbm_params = {'objective': 'binary', 'metric': 'binary_logloss', 'n_estimators': trial.suggest_int('n_estimators', 200, 1000), 'learning_rate': trial.suggest_float('learning_rate', 1e-3, 0.1, log=True), 'num_leaves': trial.suggest_int('num_leaves', 20, 300), 'random_state': 42, 'verbose': -1}
-            tscv = TimeSeriesSplit(n_splits=3)
+            # 훨씬 더 많은 하이퍼파라미터 조합 탐색
+            lgbm_params = {
+                'objective': 'binary',
+                'metric': 'binary_logloss',
+                'boosting_type': trial.suggest_categorical('boosting_type', ['gbdt', 'dart', 'goss']),
+                'n_estimators': trial.suggest_int('n_estimators', 200, 800),
+                'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.2, log=True),  # 범위 축소
+                'num_leaves': trial.suggest_int('num_leaves', 20, 200),  # 10~1000 → 20~200
+                'max_depth': trial.suggest_int('max_depth', 5, 12),  # 3~20 → 5~12
+                'min_child_samples': trial.suggest_int('min_child_samples', 10, 50),  # 1~200 → 10~50
+                'subsample': trial.suggest_float('subsample', 0.7, 1.0),  # 0.3~1.0 → 0.7~1.0
+                'colsample_bytree': trial.suggest_float('colsample_bytree', 0.7, 1.0),  # 축소
+                'reg_alpha': trial.suggest_float('reg_alpha', 1e-3, 10.0, log=True),  # 범위 축소
+                'reg_lambda': trial.suggest_float('reg_lambda', 1e-3, 10.0, log=True),  # 범위 축소
+                'min_split_gain': trial.suggest_float('min_split_gain', 0.0, 0.5),  # 0~2 → 0~0.5
+                'random_state': 42,
+                'verbose': -1
+            }
+            tscv = TimeSeriesSplit(n_splits=5)  # 교차검증도 더 엄격하게
             scores = []
             for train_idx, test_idx in tscv.split(X):
-                X_train, X_test, y_train, y_test = X.iloc[train_idx], X.iloc[test_idx], y.iloc[train_idx], y.iloc[test_idx]
+                X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
+                y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
                 scaler = RobustScaler()
                 X_train_scaled, X_test_scaled = scaler.fit_transform(X_train), scaler.transform(X_test)
                 model = lgb.LGBMClassifier(**lgbm_params)
@@ -222,6 +272,9 @@ class NewsScorer:
         study.optimize(objective, n_trials=n_trials)
         self.best_params = study.best_params
         print(f"최적화 완료. 최고 교차검증 정확도: {study.best_value:.1%}")
+        print(f"최적 하이퍼파라미터:")
+        for param, value in self.best_params.items():
+            print(f"  - {param}: {value}")
         
         self.scaler.fit(X)
         X_scaled = self.scaler.transform(X)
@@ -236,6 +289,11 @@ class NewsScorer:
         
         y_magnitude = np.abs(df_with_targets['return_24h']).fillna(0)
         self.magnitude_model.fit(X_scaled, y_magnitude)
+
+        # R^2 점수 계산 및 출력 추가
+        magnitude_preds = self.magnitude_model.predict(X_scaled)
+        magnitude_r2 = r2_score(y_magnitude, magnitude_preds)
+        print(f"수익률 크기 예측 모델 R²: {magnitude_r2:.4f}")
 
         if verbose: print(f"\n앙상블 모델 훈련 완료")
             
@@ -373,13 +431,9 @@ if __name__ == "__main__":
         df_news = pd.read_csv(news_csv_path)
         df_news['news_date'] = pd.to_datetime(df_news['news_date'])
 
-        # 데이터 사용량: 운영 모드에서는 전체 데이터, 개발 모드에서는 샘플 데이터
-        if PRODUCTION_MODE:
-            print(f"운영 모드: 전체 데이터 사용 ({len(df_news):,}개 뉴스)")
-            df_news_final = df_news
-        else:
-            print("개발 모드: 샘플 데이터 사용 (3,000개 뉴스)")
-            df_news_final = df_news.sample(n=3000, random_state=42)
+        # 데이터 사용량: 운영 모드와 개발 모드 모두 전체 데이터 사용
+        print(f"{'운영' if PRODUCTION_MODE else '개발'} 모드: 전체 데이터 사용 ({len(df_news):,}개 뉴스)")
+        df_news_final = df_news
 
         ai_system = NewsScorer(name_ticker_map, name_sector_map)
         training_results = ai_system.train(df_news_final, n_trials=30, verbose=True)

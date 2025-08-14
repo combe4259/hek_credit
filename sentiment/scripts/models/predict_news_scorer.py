@@ -84,10 +84,43 @@ class NewsScorer:
         df_sorted['news_frequency_cumulative'] = df_sorted.groupby('original_stock').cumcount() + 1
         feature_parts.append(df_sorted[['days_since_last_news', 'news_frequency_cumulative']].reindex(df_copy.index))
 
-        # 7. 과거 주가 정보
+        # 7. 과거 주가 정보 (다중 기간 모멘텀) - 데이터 누수 방지
         if 'price_at_news_time' in df_copy.columns:
-            df_sorted['return_5d_before_news'] = df_sorted.groupby('original_stock')['price_at_news_time'].pct_change(periods=5).fillna(0)
-            feature_parts.append(df_sorted[['return_5d_before_news']].reindex(df_copy.index))
+            momentum_df = pd.DataFrame(index=df_copy.index)
+            
+            # 각 뉴스별로 개별적으로 모멘텀 계산 (훈련 시에만 사용, 예측 시에는 실시간 계산)
+            for idx, row in df_copy.iterrows():
+                stock_name = row['original_stock'].strip('$')
+                ticker = self.name_to_ticker_map.get(stock_name)
+                news_date = pd.to_datetime(row['news_date'])
+                
+                if ticker and hasattr(self, 'stock_cache'):  # 훈련된 모델에서만
+                    try:
+                        # 뉴스 발생 전 30일간의 주가 데이터 확보
+                        stock_data = self._get_stock_data(ticker, news_date - timedelta(days=30), news_date)
+                        if stock_data is not None and len(stock_data) >= 20:
+                            # 뉴스 발생 시점 기준으로 과거 모멘텀 계산
+                            prices = stock_data['Close']
+                            news_price = self._get_price_at_time(stock_data, news_date)
+                            
+                            if news_price:
+                                # 1일 전 가격과 비교
+                                price_1d = self._get_price_at_time(stock_data, news_date - timedelta(days=1))
+                                momentum_df.loc[idx, 'return_1d_before_news'] = (news_price - price_1d) / price_1d if price_1d else 0
+                                
+                                # 5일 전 가격과 비교  
+                                price_5d = self._get_price_at_time(stock_data, news_date - timedelta(days=5))
+                                momentum_df.loc[idx, 'return_5d_before_news'] = (news_price - price_5d) / price_5d if price_5d else 0
+                                
+                                # 20일 전 가격과 비교
+                                price_20d = self._get_price_at_time(stock_data, news_date - timedelta(days=20))
+                                momentum_df.loc[idx, 'return_20d_before_news'] = (news_price - price_20d) / price_20d if price_20d else 0
+                    except Exception:
+                        pass
+            
+            # 결측값을 0으로 채움
+            momentum_df = momentum_df.fillna(0)
+            feature_parts.append(momentum_df)
 
         # 8. 상호작용 피처
         interaction_df = pd.DataFrame(index=df_copy.index)
@@ -147,17 +180,163 @@ class NewsScorer:
         impact_score = 5 + (final_prob - 0.5) * 10 * min(magnitude * 50, 1)
         impact_score = np.clip(impact_score, 0, 10)
         
+        # 0~100 범위 점수 추가 계산
+        impact_score_100 = impact_score * 10
+        
         prediction = 'POSITIVE' if final_prob > 0.7 else 'NEGATIVE' if final_prob < 0.3 else 'NEUTRAL'
         confidence = 'HIGH' if abs(final_prob - 0.5) > 0.2 else 'MEDIUM'
         
-        result = {'impact_score': round(float(impact_score), 2), 'direction_probability': round(float(final_prob), 3), 'expected_magnitude': round(float(magnitude), 4), 'prediction': prediction, 'confidence': confidence}
+        result = {'impact_score': round(float(impact_score), 2), 'impact_score_100': round(float(impact_score_100), 1), 'direction_probability': round(float(final_prob), 3), 'expected_magnitude': round(float(magnitude), 4), 'prediction': prediction, 'confidence': confidence}
         
         if verbose:
             print(f"뉴스: \"{news_data.get('content', 'N/A')[:40]}...\"")
-            print(f"  - 최종 영향도 점수: {result['impact_score']}/10")
+            print(f"  - 최종 영향도 점수: {result['impact_score']}/10 ({result["impact_score_100"]}/100)")
             print(f"  - 최종 상승 확률: {result['direction_probability']:.1%}")
             print(f"  - 예상 변동폭: {result['expected_magnitude']:.2%}")
             print(f"  - 예측: {result['prediction']} ({result['confidence']} 신뢰도)")
+        
+        return result
+
+    @staticmethod
+    def aggregate_news_scores(predictions_list: list, news_dates_list: list, stock_name: str, 
+                            analysis_date: datetime = None, max_days: int = 14, verbose: bool = True) -> Dict:
+        """
+        시간 가중치와 기간 제한을 적용한 종목별 종합 점수 계산
+        
+        Args:
+            predictions_list: predict_news_impact 결과들의 리스트
+            news_dates_list: 각 뉴스의 발생 시간 리스트
+            stock_name: 종목명
+            analysis_date: 기준 시점 (기본값은 현재 시간)
+            max_days: 분석 대상 기간 (기본 14일)
+            verbose: 출력 여부
+        
+        Returns:
+            Dict: 시간 가중치가 적용된 종합 점수, 대표 뉴스, 상황 요약 등
+        """
+        if not predictions_list:
+            return {'error': '분석할 예측 결과가 없습니다.'}
+        
+        if len(predictions_list) != len(news_dates_list):
+            return {'error': '예측 결과와 뉴스 날짜 개수가 일치하지 않습니다.'}
+        
+        # 기준 시점 설정 (기본값은 현재 시간)
+        if analysis_date is None:
+            analysis_date = datetime.now()
+        
+        # 최근 max_days 일 이내 뉴스만 필터링
+        filtered_data = []
+        for pred, news_date in zip(predictions_list, news_dates_list):
+            if isinstance(news_date, str):
+                news_date = pd.to_datetime(news_date)
+            
+            days_ago = (analysis_date - news_date).days
+            if 0 <= days_ago <= max_days:
+                filtered_data.append((pred, news_date, days_ago))
+        
+        if not filtered_data:
+            return {'error': f'최근 {max_days}일 이내 뉴스가 없습니다.'}
+        
+        # 시간 가중치 적용 종합 점수 계산
+        total_weight = 0
+        weighted_score_10 = 0
+        weighted_score_100 = 0
+        weighted_prob = 0
+        weighted_magnitude = 0
+        
+        positive_count = 0
+        negative_count = 0
+        neutral_count = 0
+        
+        for pred, news_date, days_ago in filtered_data:
+            # 시간 가중치 계산 (최신 뉴스일수록 높은 가중치)
+            # 지수 감소: 1일 전 = 1.0, 7일 전 = 0.5, 14일 전 = 0.25
+            time_weight = np.exp(-days_ago / 7.0)  # 7일 반감기
+            
+            # 신뢰도 가중치
+            confidence_weight = 1.5 if pred['confidence'] == 'HIGH' else 1.0
+            
+            # 최종 가중치 = 시간 가중치 × 신뢰도 가중치
+            final_weight = time_weight * confidence_weight
+            
+            weighted_score_10 += pred['impact_score'] * final_weight
+            weighted_score_100 += pred['impact_score_100'] * final_weight
+            weighted_prob += pred['direction_probability'] * final_weight
+            weighted_magnitude += pred['expected_magnitude'] * final_weight
+            total_weight += final_weight
+            
+            if pred['prediction'] == 'POSITIVE':
+                positive_count += 1
+            elif pred['prediction'] == 'NEGATIVE':
+                negative_count += 1
+            else:
+                neutral_count += 1
+        
+        # 가중평균 계산
+        aggregate_score_10 = round(weighted_score_10 / total_weight, 2)
+        aggregate_score_100 = round(weighted_score_100 / total_weight, 1)
+        aggregate_prob = round(weighted_prob / total_weight, 3)
+        aggregate_magnitude = round(weighted_magnitude / total_weight, 4)
+        
+        # 전체 예측 및 신뢰도
+        overall_prediction = 'POSITIVE' if aggregate_prob > 0.6 else 'NEGATIVE' if aggregate_prob < 0.4 else 'NEUTRAL'
+        overall_confidence = 'HIGH' if abs(aggregate_prob - 0.5) > 0.2 else 'MEDIUM' if abs(aggregate_prob - 0.5) > 0.1 else 'LOW'
+        
+        # 대표 뉴스 (가장 최근이면서 극단적인 점수)
+        # 최신성과 극단성을 모두 고려한 점수 계산
+        representative_scores = []
+        for pred, news_date, days_ago in filtered_data:
+            time_weight = np.exp(-days_ago / 7.0)
+            extremeness = abs(pred['impact_score'] - 5)  # 5에서 멀수록 극단적
+            combined_score = time_weight * extremeness
+            representative_scores.append(combined_score)
+        
+        representative_idx = np.argmax(representative_scores)
+        representative_news = filtered_data[representative_idx][0]
+        representative_date = filtered_data[representative_idx][1]
+        
+        # 상황 요약 (시간 정보 포함)
+        total_news = len(filtered_data)
+        avg_days_ago = np.mean([days_ago for _, _, days_ago in filtered_data])
+        
+        if overall_prediction == 'POSITIVE':
+            summary = f"{stock_name}: 최근 {max_days}일간 {total_news}개 뉴스(평균 {avg_days_ago:.1f}일 전) 중 호재 {positive_count}개가 우세하여 긍정적 전망"
+        elif overall_prediction == 'NEGATIVE':
+            summary = f"{stock_name}: 최근 {max_days}일간 {total_news}개 뉴스(평균 {avg_days_ago:.1f}일 전) 중 악재 {negative_count}개가 우세하여 부정적 전망"
+        else:
+            summary = f"{stock_name}: 최근 {max_days}일간 {total_news}개 뉴스(평균 {avg_days_ago:.1f}일 전)가 균형잡혀 중립적 전망"
+        
+        result = {
+            'stock_name': stock_name,
+            'analysis_period_days': max_days,
+            'total_news_count': total_news,
+            'average_days_ago': round(avg_days_ago, 1),
+            'aggregate_score_10': aggregate_score_10,
+            'aggregate_score_100': aggregate_score_100,
+            'aggregate_probability': aggregate_prob,
+            'aggregate_magnitude': aggregate_magnitude,
+            'overall_prediction': overall_prediction,
+            'overall_confidence': overall_confidence,
+            'news_breakdown': {
+                'positive': positive_count,
+                'negative': negative_count,
+                'neutral': neutral_count
+            },
+            'representative_news': {
+                'prediction': representative_news,
+                'date': representative_date.strftime('%Y-%m-%d %H:%M') if isinstance(representative_date, datetime) else str(representative_date),
+                'days_ago': filtered_data[representative_idx][2]
+            },
+            'situation_summary': summary
+        }
+        
+        if verbose:
+            print(f"\n{stock_name} 종합 분석 결과 (최근 {max_days}일):")
+            print(f"총 {total_news}개 뉴스(평균 {avg_days_ago:.1f}일 전) - 시간가중 종합점수: {aggregate_score_10}/10 ({aggregate_score_100}/100)")
+            print(f"시간가중 상승 확률: {aggregate_prob:.1%} | 예측: {overall_prediction} ({overall_confidence})")
+            print(f"호재 {positive_count}개, 악재 {negative_count}개, 중립 {neutral_count}개")
+            print(f"대표 뉴스: {filtered_data[representative_idx][2]}일 전 ({representative_date.strftime('%m/%d %H:%M')})")
+            print(f"{summary}")
         
         return result
 
