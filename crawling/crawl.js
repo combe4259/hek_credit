@@ -682,7 +682,7 @@ async function crawlAllSP500() {
         const startFromStock = ""; // 시작할 종목명 (비워두면 처음부터)
         const startIndex = startFromStock ? stocks.findIndex(stock => stock.includes(startFromStock)) : 0;
 
-        console.log(`🚀 S&P 500 전체 종목 크롤링 시작: ${stocks.length}개 종목`);
+        console.log(`S&P 500 전체 종목 크롤링 시작: ${stocks.length}개 종목`);
         console.log('각 종목당 3페이지씩 크롤링 진행...\n');
 
         let totalArticles = 0;
@@ -692,7 +692,7 @@ async function crawlAllSP500() {
             const stockIndex = i + 1;
 
             console.log(`\n[${'='.repeat(50)}]`);
-            console.log(`📈 [${stockIndex}/${stocks.length}] ${stockName} 크롤링 시작...`);
+            console.log(`[${stockIndex}/${stocks.length}] ${stockName} 크롤링 시작...`);
             console.log(`[${'='.repeat(50)}]`);
 
             try {
